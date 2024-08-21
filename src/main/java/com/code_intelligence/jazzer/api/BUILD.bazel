@@ -19,6 +19,7 @@ java_library(
         "Function4.java",
         "Function5.java",
         "FuzzedDataProvider.java",
+        "NotEnoughFuzzedData.java",
         "SilentCloseable.java",
     ],
     visibility = ["//visibility:public"],

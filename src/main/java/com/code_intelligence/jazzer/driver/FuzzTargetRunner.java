@@ -26,6 +26,7 @@ import static java.util.stream.Collectors.toList;
 import static java.util.stream.Stream.concat;
 
 import com.code_intelligence.jazzer.api.FuzzedDataProvider;
+import com.code_intelligence.jazzer.api.NotEnoughFuzzedData;
 import com.code_intelligence.jazzer.autofuzz.FuzzTarget;
 import com.code_intelligence.jazzer.instrumentor.CoverageRecorder;
 import com.code_intelligence.jazzer.mutation.ArgumentsMutator;
@@ -99,6 +100,7 @@ public final class FuzzTargetRunner {
   // Possible return values for the libFuzzer callback runOne.
   private static final int LIBFUZZER_CONTINUE = 0;
   private static final int LIBFUZZER_RETURN_FROM_DRIVER = -2;
+  private static final int LIBFUZZER_IGNORE = -1;
 
   // Keep these options used in runOne (and thus the critical path) in static final fields so that
   // they can be constant-folded by the JIT.
@@ -111,9 +113,13 @@ public final class FuzzTargetRunner {
   private static final boolean useHooks = Opt.hooks.get();
   private static final boolean emitDedupToken = Opt.dedup.get();
   private static final long keepGoing = Opt.keepGoing.get();
+  private static final boolean limitedInput = Opt.limitedInput.get();
+  private static final boolean ignoreInputEnd = Opt.ignoreInputEnd.get();
   private static final long crossOverFrequency = Opt.experimentalCrossOverFrequency.get();
   private static final FuzzedDataProviderImpl fuzzedDataProvider =
       FuzzedDataProviderImpl.withNativeData();
+  private static final LimitedFuzzedDataProvider limitedFuzzedDataProvider =
+      new LimitedFuzzedDataProvider(fuzzedDataProvider);
   private static final MethodHandle fuzzTargetMethod;
   private static final LifecycleMethodsInvoker lifecycleMethodsInvoker;
   private static final boolean useFuzzedDataProvider;
@@ -205,7 +211,7 @@ public final class FuzzTargetRunner {
     } else if (useFuzzedDataProvider) {
       fuzzedDataProvider.setNativeData(dataPtr, dataLength);
       data = null;
-      argument = fuzzedDataProvider;
+      argument = limitedInput ? limitedFuzzedDataProvider : fuzzedDataProvider;
     } else {
       data = copyToArray(dataPtr, dataLength);
       argument = data;
@@ -265,6 +271,10 @@ public final class FuzzTargetRunner {
     // Allow skipping invalid inputs in fuzz tests by using e.g. JUnit's assumeTrue.
     if (finding == null || finding.getClass().getName().equals(OPENTEST4J_TEST_ABORTED_EXCEPTION)) {
       return LIBFUZZER_CONTINUE;
+    }
+
+    if (finding.getClass().getName().equals(NotEnoughFuzzedData.class.getName())) {
+      return ignoreInputEnd ? LIBFUZZER_CONTINUE : LIBFUZZER_IGNORE;
     }
 
     // The user-provided fuzz target method has returned. Any further exits, e.g. due to uncaught

@@ -178,6 +178,17 @@ public final class Opt {
       OptParser.stringListSetting(
           "instrumentation_excludes",
           "Glob patterns matching names of classes that should not be instrumented for fuzzing");
+  public static final OptItem<Boolean> limitedInput =
+      boolSetting(
+          "limited_input",
+          false,
+          "If true FuzzedDataProvider will throw `NotEnoughFuzzedDataException`"
+              + "when fuzzed data is not enough");
+  public static final OptItem<Boolean> ignoreInputEnd =
+      boolSetting(
+          "ignore_input_end",
+          true,
+          "When `NotEnoughFuzzedDateException` is thrown, should we treat is as found bug");
   public static final OptItem<List<String>> instrumentationIncludes =
       OptParser.stringListSetting(
           "instrumentation_includes",

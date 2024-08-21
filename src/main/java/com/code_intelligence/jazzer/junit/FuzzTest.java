@@ -125,6 +125,10 @@ public @interface FuzzTest {
    */
   long maxExecutions() default 0;
 
+  //  long keepGoing() default 0;
+  //
+  //  boolean failWhenNotEnoughFuzzedData() default false;
+
   /**
    * Controls the JUnit lifecycle of fuzz tests during fuzzing.
    *
