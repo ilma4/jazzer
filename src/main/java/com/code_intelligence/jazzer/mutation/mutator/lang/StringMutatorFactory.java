@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.lang;
@@ -20,16 +13,20 @@ import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinator
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.*;
 
 import com.code_intelligence.jazzer.mutation.annotation.Ascii;
+import com.code_intelligence.jazzer.mutation.annotation.UrlSegment;
 import com.code_intelligence.jazzer.mutation.annotation.WithUtf8Length;
 import com.code_intelligence.jazzer.mutation.api.Debuggable;
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.mutator.libfuzzer.LibFuzzerMutatorFactory;
+import com.code_intelligence.jazzer.mutation.support.TypeHolder;
 import java.lang.reflect.AnnotatedType;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.function.Predicate;
 
-final class StringMutatorFactory extends MutatorFactory {
+final class StringMutatorFactory implements MutatorFactory {
   private static final int HEADER_MASK = 0b1100_0000;
   private static final int BODY_MASK = 0b0011_1111;
   private static final int CONTINUATION_HEADER = 0b1000_0000;
@@ -141,24 +138,49 @@ final class StringMutatorFactory extends MutatorFactory {
     }
   }
 
+  // Based on pchar definition at https://datatracker.ietf.org/doc/html/rfc3986#appendix-A
+  // Don't generate '%' as it needs to be followed by two hex characters.
+  //
+  // The following array maps all byte values to valid pchars, leaving the initial valid ones
+  // untouched.
+  // This enables a constant time mapping of individual characters with a uniform distribution.
+  // Code to generate the array is located in
+  // com.code_intelligence.jazzer.mutation.mutator.lang.PCharGenerator.
+  static final byte[] BYTE_TO_PCHAR =
+      "!$&'()*+,-.0123456789:;=@ABCDEFGH!IJ$K&'()*+,-.L0123456789:;M=NO@ABCDEFGHIJKLMNOPQRSTUVWXYZPQRS_TabcdefghijklmnopqrstuvwxyzUVW~XYZ_abcdefghijklmnopqrstuvwxyz~!$&'()*+,-.0123456789:;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~!$&'()*+,-.01234567"
+          .getBytes(StandardCharsets.UTF_8);
+
+  static void fixUpPchar(byte[] bytes) {
+    for (int i = 0; i < bytes.length; i++) {
+      bytes[i] = BYTE_TO_PCHAR[bytes[i] & 0xFF];
+    }
+  }
+
   @Override
-  public Optional<SerializingMutator<?>> tryCreate(AnnotatedType type, MutatorFactory factory) {
-    Optional<WithUtf8Length> utf8Length =
-        Optional.ofNullable(type.getAnnotation(WithUtf8Length.class));
-    int min = utf8Length.map(WithUtf8Length::min).orElse(DEFAULT_MIN_BYTES);
-    int max = utf8Length.map(WithUtf8Length::max).orElse(DEFAULT_MAX_BYTES);
-
-    AnnotatedType innerByteArray = notNull(withLength(asAnnotatedType(byte[].class), min, max));
-
+  public Optional<SerializingMutator<?>> tryCreate(
+      AnnotatedType type, ExtendedMutatorFactory factory) {
     return findFirstParentIfClass(type, String.class)
-        .flatMap(parent -> factory.tryCreate(innerByteArray))
+        .flatMap(
+            parent -> {
+              Optional<WithUtf8Length> utf8Length =
+                  Optional.ofNullable(type.getAnnotation(WithUtf8Length.class));
+              int min = utf8Length.map(WithUtf8Length::min).orElse(DEFAULT_MIN_BYTES);
+              int max = utf8Length.map(WithUtf8Length::max).orElse(DEFAULT_MAX_BYTES);
+
+              AnnotatedType innerByteArray =
+                  notNull(withLength(new TypeHolder<byte[]>() {}.annotatedType(), min, max));
+              return LibFuzzerMutatorFactory.tryCreate(innerByteArray);
+            })
         .map(
             byteArrayMutator -> {
               boolean fixUpAscii = type.getDeclaredAnnotation(Ascii.class) != null;
+              boolean fixUpPchar = type.getDeclaredAnnotation(UrlSegment.class) != null;
               return mutateThenMapToImmutable(
                   (SerializingMutator<byte[]>) byteArrayMutator,
                   bytes -> {
-                    if (fixUpAscii) {
+                    if (fixUpPchar) {
+                      fixUpPchar(bytes);
+                    } else if (fixUpAscii) {
                       fixUpAscii(bytes);
                     } else {
                       fixUpUtf8(bytes);

@@ -1,36 +1,30 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation;
 
-import static com.code_intelligence.jazzer.mutation.mutator.Mutators.validateAnnotationUsage;
+import static com.code_intelligence.jazzer.mutation.support.AnnotationSupport.validateAnnotationUsage;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.require;
 import static com.code_intelligence.jazzer.mutation.support.StreamSupport.toArrayOrEmpty;
 import static java.lang.String.format;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
 
-import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.PseudoRandom;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.combinator.InPlaceProductMutator;
 import com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators;
-import com.code_intelligence.jazzer.mutation.combinator.ProductMutator;
 import com.code_intelligence.jazzer.mutation.engine.SeededPseudoRandom;
 import com.code_intelligence.jazzer.mutation.mutator.Mutators;
 import com.code_intelligence.jazzer.mutation.support.Preconditions;
+import com.code_intelligence.jazzer.utils.Log;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,20 +36,25 @@ import java.lang.reflect.Method;
 import java.util.Optional;
 
 public final class ArgumentsMutator {
+  private final ExtendedMutatorFactory mutatorFactory;
   private final Method method;
-  private final ProductMutator productMutator;
+  private final InPlaceProductMutator productMutator;
+
   private Object[] arguments;
 
   /**
    * True if the arguments array has already been passed to a user-provided function or exposed via
-   * {@link #getArguments()} without going through {@link ProductMutator#detach(Object[])}. In this
-   * case the arguments may have been modified externally, which interferes with mutation, or could
-   * have been stored in static state that would be affected by future mutations. Arguments should
-   * either be detached or not be reused after being exposed, which is enforced by this variable.
+   * {@link #getArguments()} without going through {@link InPlaceProductMutator#detach(Object[])}.
+   * In this case the arguments may have been modified externally, which interferes with mutation,
+   * or could have been stored in static state that would be affected by future mutations. Arguments
+   * should either be detached or not be reused after being exposed, which is enforced by this
+   * variable.
    */
   private boolean argumentsExposed;
 
-  private ArgumentsMutator(Method method, ProductMutator productMutator) {
+  private ArgumentsMutator(
+      ExtendedMutatorFactory mutatorFactory, Method method, InPlaceProductMutator productMutator) {
+    this.mutatorFactory = mutatorFactory;
     this.method = method;
     this.productMutator = productMutator;
   }
@@ -80,22 +79,39 @@ public final class ArgumentsMutator {
     return forMethod(Mutators.newFactory(), method);
   }
 
-  public static Optional<ArgumentsMutator> forMethod(MutatorFactory mutatorFactory, Method method) {
+  public static Optional<ArgumentsMutator> forMethod(
+      ExtendedMutatorFactory mutatorFactory, Method method) {
     require(method.getParameterCount() > 0, "Can't fuzz method without parameters: " + method);
-    for (AnnotatedType parameter : method.getAnnotatedParameterTypes()) {
-      validateAnnotationUsage(parameter);
+    try {
+      for (AnnotatedType parameter : method.getAnnotatedParameterTypes()) {
+        validateAnnotationUsage(parameter);
+      }
+    } catch (RuntimeException validationError) {
+      Log.error(validationError.getMessage());
+      throw validationError;
     }
     return toArrayOrEmpty(
-            stream(method.getAnnotatedParameterTypes()).map(mutatorFactory::tryCreate),
+            stream(method.getAnnotatedParameterTypes())
+                .map(
+                    type -> {
+                      Optional<SerializingMutator<?>> mutator = mutatorFactory.tryCreate(type);
+                      if (!mutator.isPresent()) {
+                        Log.error(
+                            String.format(
+                                "Unsupported fuzz test parameter type %s in %s",
+                                type.getType().getTypeName(), prettyPrintMethod(method)));
+                      }
+                      return mutator;
+                    }),
             SerializingMutator<?>[]::new)
-        .map(MutatorCombinators::mutateProduct)
-        .map(productMutator -> ArgumentsMutator.create(method, productMutator));
+        .map(MutatorCombinators::mutateProductInPlace)
+        .map(productMutator -> create(mutatorFactory, method, productMutator));
   }
 
-  private static ArgumentsMutator create(Method method, ProductMutator productMutator) {
+  private static ArgumentsMutator create(
+      ExtendedMutatorFactory mutatorFactory, Method method, InPlaceProductMutator productMutator) {
     method.setAccessible(true);
-
-    return new ArgumentsMutator(method, productMutator);
+    return new ArgumentsMutator(mutatorFactory, method, productMutator);
   }
 
   /**
@@ -184,6 +200,10 @@ public final class ArgumentsMutator {
   public Object[] getArguments() {
     argumentsExposed = true;
     return arguments;
+  }
+
+  public void finishFuzzingIteration() {
+    mutatorFactory.getCache().clear();
   }
 
   @Override

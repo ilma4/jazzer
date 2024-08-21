@@ -1,29 +1,27 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.lang;
 
 import static com.code_intelligence.jazzer.mutation.mutator.lang.StringMutatorFactory.fixUpAscii;
+import static com.code_intelligence.jazzer.mutation.mutator.lang.StringMutatorFactory.fixUpPchar;
 import static com.code_intelligence.jazzer.mutation.mutator.lang.StringMutatorFactory.fixUpUtf8;
+import static com.code_intelligence.jazzer.mutation.support.TestSupport.anyPseudoRandom;
 import static com.code_intelligence.jazzer.mutation.support.TestSupport.mockPseudoRandom;
 import static com.google.common.truth.Truth.assertThat;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
+import com.code_intelligence.jazzer.mutation.annotation.UrlSegment;
 import com.code_intelligence.jazzer.mutation.annotation.WithUtf8Length;
+import com.code_intelligence.jazzer.mutation.api.PseudoRandom;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.mutator.libfuzzer.LibFuzzerMutate;
 import com.code_intelligence.jazzer.mutation.support.RandomSupport;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
@@ -35,6 +33,13 @@ import java.util.SplittableRandom;
 import org.junit.jupiter.api.*;
 
 class StringMutatorTest {
+  ChainedMutatorFactory factory;
+
+  @BeforeEach
+  void createFactory() {
+    factory = ChainedMutatorFactory.of(LangMutators.newFactories());
+  }
+
   /**
    * Some tests may set {@link LibFuzzerMutate#MOCK_SIZE_KEY} which can interfere with other tests
    * unless cleared.
@@ -108,13 +113,46 @@ class StringMutatorTest {
     }
   }
 
+  @RepeatedTest(10)
+  void testFixPchar_randomInputFixed(RepetitionInfo info) {
+    SplittableRandom random =
+        new SplittableRandom(
+            (long) "testFixPchar_randomInputFixed".hashCode() * info.getCurrentRepetition());
+
+    for (int length = 0; length < 1000; length++) {
+      byte[] randomBytes = generateRandomBytes(random, length);
+      byte[] copy = Arrays.copyOf(randomBytes, randomBytes.length);
+      fixUpPchar(copy);
+      if (isValidPathVariable(randomBytes)) {
+        assertThat(copy).isEqualTo(randomBytes);
+      } else {
+        assertThat(isValidAscii(copy)).isTrue();
+      }
+    }
+  }
+
+  @Test
+  void testUrlSegmentInit() {
+    SerializingMutator<String> mutator =
+        (SerializingMutator<String>)
+            factory.createOrThrow(
+                new TypeHolder<
+                    @NotNull @UrlSegment @WithUtf8Length(min = 10) String>() {}.annotatedType());
+    assertThat(mutator.toString()).isEqualTo("String");
+    PseudoRandom prng = anyPseudoRandom();
+    for (int i = 0; i < 1000; i++) {
+      String urlSegment = mutator.init(prng);
+      assertThat(urlSegment.length()).isAtLeast(10);
+      assertThat(isValidPathVariable(urlSegment.getBytes(StandardCharsets.UTF_8))).isTrue();
+    }
+  }
+
   @Test
   void testMinLengthInit() {
     SerializingMutator<String> mutator =
         (SerializingMutator<String>)
-            LangMutators.newFactory()
-                .createOrThrow(
-                    new TypeHolder<@NotNull @WithUtf8Length(min = 10) String>() {}.annotatedType());
+            factory.createOrThrow(
+                new TypeHolder<@NotNull @WithUtf8Length(min = 10) String>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("String");
 
     try (MockPseudoRandom prng = mockPseudoRandom(5)) {
@@ -131,9 +169,8 @@ class StringMutatorTest {
   void testMaxLengthInit() {
     SerializingMutator<String> mutator =
         (SerializingMutator<String>)
-            LangMutators.newFactory()
-                .createOrThrow(
-                    new TypeHolder<@NotNull @WithUtf8Length(max = 50) String>() {}.annotatedType());
+            factory.createOrThrow(
+                new TypeHolder<@NotNull @WithUtf8Length(max = 50) String>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("String");
 
     try (MockPseudoRandom prng = mockPseudoRandom(60)) {
@@ -150,9 +187,8 @@ class StringMutatorTest {
   void testMinLengthMutate() {
     SerializingMutator<String> mutator =
         (SerializingMutator<String>)
-            LangMutators.newFactory()
-                .createOrThrow(
-                    new TypeHolder<@NotNull @WithUtf8Length(min = 10) String>() {}.annotatedType());
+            factory.createOrThrow(
+                new TypeHolder<@NotNull @WithUtf8Length(min = 10) String>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("String");
 
     String s;
@@ -172,9 +208,8 @@ class StringMutatorTest {
   void testMaxLengthMutate() {
     SerializingMutator<String> mutator =
         (SerializingMutator<String>)
-            LangMutators.newFactory()
-                .createOrThrow(
-                    new TypeHolder<@NotNull @WithUtf8Length(max = 15) String>() {}.annotatedType());
+            factory.createOrThrow(
+                new TypeHolder<@NotNull @WithUtf8Length(max = 15) String>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("String");
 
     String s;
@@ -197,9 +232,8 @@ class StringMutatorTest {
   void testMultibyteCharacters() {
     SerializingMutator<String> mutator =
         (SerializingMutator<String>)
-            LangMutators.newFactory()
-                .createOrThrow(
-                    new TypeHolder<@NotNull @WithUtf8Length(min = 10) String>() {}.annotatedType());
+            factory.createOrThrow(
+                new TypeHolder<@NotNull @WithUtf8Length(min = 10) String>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("String");
 
     String s;
@@ -222,6 +256,27 @@ class StringMutatorTest {
       }
     }
     return true;
+  }
+
+  private static final byte[] VALID_PCHAR =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:@!$&'()*+,;=".getBytes();
+
+  private static boolean isValidPathVariable(byte[] data) {
+    for (byte b : data) {
+      if (!isValidPathChar(b)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean isValidPathChar(byte b) {
+    for (byte valid : VALID_PCHAR) {
+      if (b == valid) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static byte[] generateRandomBytes(SplittableRandom random, int length) {

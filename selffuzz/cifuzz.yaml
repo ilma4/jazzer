@@ -1,16 +1,11 @@
-# Copyright 2023 Code Intelligence GmbH
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Copyright 2024 Code Intelligence GmbH
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+# located in the root directory of the project.
+#
 
 ## Configuration for a CI Fuzz project
 ## Generated on 2023-06-15
@@ -37,7 +32,7 @@
 ## Command-line arguments to pass to libFuzzer.
 ## See https://llvm.org/docs/LibFuzzer.html#options
 engine-args:
- - --experimental_mutator
+  - -print_final_stats=1
 
 ## Maximum time to run fuzz tests. The default is to run indefinitely.
 timeout: 5m
@@ -51,15 +46,13 @@ timeout: 5m
 #print-json: true
 
 ## Set to true to disable desktop notifications.
-#no-notifications: true
+no-notifications: true
 
-## Set URL of the CI App.
+## Set URL of CI Sense.
 #server: https://app.code-intelligence.com
 
-## Set the project name on the CI App.
-#project: my-project-1a2b3c4d
+## Set the project name on CI Sense.
+project: Jazzer-39e8ed3a
 
 ## Style for CI Fuzz.
 #style: plain
-
-project: Jazzer-39e8ed3a

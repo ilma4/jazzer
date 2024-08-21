@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.proto;
@@ -21,35 +14,39 @@ import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
-import com.code_intelligence.jazzer.mutation.api.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.InPlaceMutator;
-import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
+import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.mutator.collection.CollectionMutators;
 import com.code_intelligence.jazzer.mutation.mutator.lang.LangMutators;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
-import com.code_intelligence.jazzer.protobuf.Proto2.MessageField2;
-import com.code_intelligence.jazzer.protobuf.Proto2.OneOfField2;
-import com.code_intelligence.jazzer.protobuf.Proto2.PrimitiveField2;
-import com.code_intelligence.jazzer.protobuf.Proto2.RecursiveMessageField2;
-import com.code_intelligence.jazzer.protobuf.Proto2.RepeatedMessageField2;
-import com.code_intelligence.jazzer.protobuf.Proto2.RepeatedOptionalMessageField2;
-import com.code_intelligence.jazzer.protobuf.Proto2.RepeatedPrimitiveField2;
-import com.code_intelligence.jazzer.protobuf.Proto2.RequiredPrimitiveField2;
+import com.code_intelligence.jazzer.mutation.utils.PropertyConstraint;
+import com.code_intelligence.jazzer.protobuf.Proto2.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings("unchecked")
 class BuilderMutatorProto2Test {
-  private static final MutatorFactory FACTORY =
-      new ChainedMutatorFactory(
-          LangMutators.newFactory(), CollectionMutators.newFactory(), ProtoMutators.newFactory());
+  ChainedMutatorFactory factory;
+
+  @BeforeEach
+  void createFactory() {
+    factory =
+        ChainedMutatorFactory.of(
+            LangMutators.newFactories(),
+            CollectionMutators.newFactories(),
+            ProtoMutators.newFactories());
+  }
 
   @Test
   void testPrimitiveField() {
     InPlaceMutator<PrimitiveField2.Builder> mutator =
         (InPlaceMutator<PrimitiveField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<PrimitiveField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("{Builder.Nullable<Boolean>}");
+    assertThat(mutator.hasFixedSize()).isTrue();
 
     PrimitiveField2.Builder builder = PrimitiveField2.newBuilder();
 
@@ -100,9 +97,10 @@ class BuilderMutatorProto2Test {
   void testRequiredPrimitiveField() {
     InPlaceMutator<RequiredPrimitiveField2.Builder> mutator =
         (InPlaceMutator<RequiredPrimitiveField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<RequiredPrimitiveField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("{Builder.Boolean}");
+    assertThat(mutator.hasFixedSize()).isTrue();
 
     RequiredPrimitiveField2.Builder builder = RequiredPrimitiveField2.newBuilder();
 
@@ -121,9 +119,10 @@ class BuilderMutatorProto2Test {
   void testRepeatedPrimitiveField() {
     InPlaceMutator<RepeatedPrimitiveField2.Builder> mutator =
         (InPlaceMutator<RepeatedPrimitiveField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<RepeatedPrimitiveField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("{Builder via List<Boolean>}");
+    assertThat(mutator.hasFixedSize()).isFalse();
 
     RepeatedPrimitiveField2.Builder builder = RepeatedPrimitiveField2.newBuilder();
 
@@ -172,9 +171,10 @@ class BuilderMutatorProto2Test {
   void testMessageField() {
     InPlaceMutator<MessageField2.Builder> mutator =
         (InPlaceMutator<MessageField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<MessageField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("{Builder.Nullable<{Builder.Boolean} -> Message>}");
+    assertThat(mutator.hasFixedSize()).isTrue();
 
     MessageField2.Builder builder = MessageField2.newBuilder();
 
@@ -220,11 +220,12 @@ class BuilderMutatorProto2Test {
   void testRepeatedOptionalMessageField() {
     InPlaceMutator<RepeatedOptionalMessageField2.Builder> mutator =
         (InPlaceMutator<RepeatedOptionalMessageField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<
                     RepeatedOptionalMessageField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString())
         .isEqualTo("{Builder via List<{Builder.Nullable<Boolean>} -> Message>}");
+    assertThat(mutator.hasFixedSize()).isFalse();
 
     RepeatedOptionalMessageField2.Builder builder = RepeatedOptionalMessageField2.newBuilder();
 
@@ -261,9 +262,10 @@ class BuilderMutatorProto2Test {
   void testRepeatedRequiredMessageField() {
     InPlaceMutator<RepeatedMessageField2.Builder> mutator =
         (InPlaceMutator<RepeatedMessageField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<RepeatedMessageField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("{Builder via List<{Builder.Boolean} -> Message>}");
+    assertThat(mutator.hasFixedSize()).isFalse();
 
     RepeatedMessageField2.Builder builder = RepeatedMessageField2.newBuilder();
 
@@ -324,10 +326,11 @@ class BuilderMutatorProto2Test {
   void testRecursiveMessageField() {
     InPlaceMutator<RecursiveMessageField2.Builder> mutator =
         (InPlaceMutator<RecursiveMessageField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<RecursiveMessageField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString())
         .isEqualTo("{Builder.Boolean, WithoutInit(Builder.Nullable<(cycle) -> Message>)}");
+    assertThat(mutator.hasFixedSize()).isFalse();
     RecursiveMessageField2.Builder builder = RecursiveMessageField2.newBuilder();
 
     try (MockPseudoRandom prng =
@@ -390,12 +393,13 @@ class BuilderMutatorProto2Test {
   void testOneOfField2() {
     InPlaceMutator<OneOfField2.Builder> mutator =
         (InPlaceMutator<OneOfField2.Builder>)
-            FACTORY.createInPlaceOrThrow(
+            factory.createInPlaceOrThrow(
                 new TypeHolder<OneOfField2.@NotNull Builder>() {}.annotatedType());
     assertThat(mutator.toString())
         .isEqualTo(
             "{Builder.Boolean, Builder.Nullable<Boolean>, Builder.Nullable<Boolean> |"
                 + " Builder.Nullable<{Builder.Boolean} -> Message>}");
+    assertThat(mutator.hasFixedSize()).isTrue();
     OneOfField2.Builder builder = OneOfField2.newBuilder();
 
     try (MockPseudoRandom prng =
@@ -484,5 +488,16 @@ class BuilderMutatorProto2Test {
     }
     assertThat(builder.build()).isEqualTo(OneOfField2.newBuilder().setOtherField(true).build());
     assertThat(builder.build().hasMessageField()).isFalse();
+  }
+
+  @Test
+  void propagateConstraint() {
+    SerializingMutator<TestProtobuf> mutator =
+        (SerializingMutator<TestProtobuf>)
+            factory.createOrThrow(
+                new TypeHolder<
+                    @NotNull(constraint = PropertyConstraint.RECURSIVE)
+                    TestProtobuf>() {}.annotatedType());
+    assertThat(mutator.toString()).doesNotContain("Nullable");
   }
 }

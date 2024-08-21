@@ -1,28 +1,26 @@
-// Copyright 2022 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 
 package com.code_intelligence.jazzer.junit;
 
 import static com.code_intelligence.jazzer.junit.FuzzerDictionary.createDictionaryFile;
 
+import com.code_intelligence.jazzer.utils.Log;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.extension.ConditionEvaluationResult;
 import org.junit.jupiter.api.extension.ExecutionCondition;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -109,9 +107,9 @@ class FuzzTestExtensions
     }
     Throwable stored = (Throwable) getLastFindingField().get(null);
     if (stored != null) {
-      throw stored;
+      throw new FuzzTestFindingException(stored);
     } else if (thrown != null) {
-      throw thrown;
+      throw new FuzzTestFindingException(thrown);
     }
   }
 
@@ -124,11 +122,7 @@ class FuzzTestExtensions
     invocation.skip();
     Optional<Throwable> throwable =
         FuzzTestExecutor.fromContext(extensionContext)
-            .execute(
-                invocationContext,
-                extensionContext,
-                getOrCreateSeedSerializer(extensionContext),
-                lifecycle);
+            .execute(invocationContext, extensionContext, lifecycle);
     if (throwable.isPresent()) {
       throw throwable.get();
     }
@@ -137,9 +131,29 @@ class FuzzTestExtensions
   private void recordSeedForFuzzing(List<Object> arguments, ExtensionContext extensionContext)
       throws IOException {
     SeedSerializer seedSerializer = getOrCreateSeedSerializer(extensionContext);
+    byte[] seed;
     try {
-      FuzzTestExecutor.fromContext(extensionContext)
-          .addSeed(seedSerializer.write(arguments.toArray()));
+      seed = seedSerializer.write(arguments.toArray());
+    } catch (Exception ignored) {
+      String argumentTypes =
+          arguments.stream()
+              .filter(Objects::nonNull)
+              .map(obj -> obj.getClass().getName())
+              .collect(Collectors.joining(","));
+      String argumentValues =
+          arguments.stream()
+              .filter(Objects::nonNull)
+              .map(Object::toString)
+              .collect(Collectors.joining(", "));
+      Log.warn(
+          String.format(
+              "JUnit arguments of type(s) %s with value(s) %s can not be serialized as fuzzing"
+                  + " inputs. Skipped.",
+              argumentTypes, argumentValues));
+      return;
+    }
+    try {
+      FuzzTestExecutor.fromContext(extensionContext).addSeed(seed);
     } catch (UnsupportedOperationException ignored) {
     }
   }

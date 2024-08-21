@@ -1,21 +1,15 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.support;
 
+import static com.code_intelligence.jazzer.mutation.support.AnnotationSupport.validateAnnotationUsage;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.check;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.require;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.requireNonNullElements;
@@ -26,8 +20,8 @@ import static java.util.stream.Collectors.toSet;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
 import com.code_intelligence.jazzer.mutation.annotation.WithLength;
+import com.code_intelligence.jazzer.mutation.utils.PropertyConstraint;
 import java.lang.annotation.Annotation;
-import java.lang.annotation.Inherited;
 import java.lang.reflect.AnnotatedArrayType;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.AnnotatedParameterizedType;
@@ -35,17 +29,27 @@ import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.AnnotatedTypeVariable;
 import java.lang.reflect.AnnotatedWildcardType;
 import java.lang.reflect.Array;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public final class TypeSupport {
-  private static final Annotation NOT_NULL =
+  public static final Annotation NOT_NULL =
       new TypeHolder<@NotNull String>() {}.annotatedType().getAnnotation(NotNull.class);
+
+  private static final Annotation[] EMPTY_ANNOTATIONS = {};
 
   private TypeSupport() {}
 
@@ -60,78 +64,27 @@ public final class TypeSupport {
     return ((Class<?>) type).isPrimitive();
   }
 
-  public static boolean isInheritable(Annotation annotation) {
-    return annotation.annotationType().getDeclaredAnnotation(Inherited.class) != null;
-  }
-
   /**
-   * Returns {@code type} as a {@code Class<? extends T>} if it is a subclass of T, otherwise empty.
+   * Returns {@code annotatedType} as a {@code Class<? extends T>} if it is a subclass of T,
+   * otherwise empty.
    *
    * <p>This function also returns an empty {@link Optional} for more complex (e.g. parameterized)
    * types.
    */
   public static <T> Optional<Class<? extends T>> asSubclassOrEmpty(
-      AnnotatedType type, Class<T> superclass) {
-    if (!(type.getType() instanceof Class<?>)) {
+      AnnotatedType annotatedType, Class<T> superclass) {
+    Type type = annotatedType.getType();
+    if (type instanceof ParameterizedType) {
+      type = ((ParameterizedType) type).getRawType();
+    }
+    if (!(type instanceof Class<?>)) {
       return Optional.empty();
     }
-
-    Class<?> actualClazz = (Class<?>) type.getType();
+    Class<?> actualClazz = (Class<?>) type;
     if (!superclass.isAssignableFrom(actualClazz)) {
       return Optional.empty();
     }
-
     return Optional.of(actualClazz.asSubclass(superclass));
-  }
-
-  public static AnnotatedType asAnnotatedType(Class<?> clazz) {
-    requireNonNull(clazz);
-    return new AnnotatedType() {
-      @Override
-      public Type getType() {
-        return clazz;
-      }
-
-      @Override
-      public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
-        return annotatedElementGetAnnotation(this, annotationClass);
-      }
-
-      @Override
-      public Annotation[] getAnnotations() {
-        // No directly present annotations, look for inheritable present annotations on the
-        // superclass.
-        if (clazz.getSuperclass() == null) {
-          return new Annotation[0];
-        }
-        return stream(clazz.getSuperclass().getAnnotations())
-            .filter(TypeSupport::isInheritable)
-            .toArray(Annotation[]::new);
-      }
-
-      @Override
-      public Annotation[] getDeclaredAnnotations() {
-        // No directly present annotations.
-        return new Annotation[0];
-      }
-
-      @Override
-      public String toString() {
-        return annotatedTypeToString(this);
-      }
-
-      @Override
-      public int hashCode() {
-        throw new UnsupportedOperationException(
-            "hashCode() is not supported as its behavior isn't specified");
-      }
-
-      @Override
-      public boolean equals(Object obj) {
-        throw new UnsupportedOperationException(
-            "equals() is not supported as its behavior isn't specified");
-      }
-    };
   }
 
   /**
@@ -185,6 +138,44 @@ public final class TypeSupport {
     return clazz;
   }
 
+  /**
+   * Forward annotations from src to target that are not already present on target.
+   *
+   * @param src the source of annotations
+   * @param target the target for annotations
+   * @return {@code target} with annotations from {@code src} that are not already present on {@code
+   *     target} and are not excluded by {@code exclude}
+   */
+  public static AnnotatedType forwardAnnotations(AnnotatedType src, AnnotatedType target) {
+    return forwardAnnotations(src, target, EMPTY_ANNOTATIONS);
+  }
+
+  /**
+   * Forward annotations from src to target that are not already present on target, and are not
+   * excluded.
+   *
+   * @param src the source of annotations
+   * @param target the target for annotations
+   * @param exclude annotations to exclude from the transfer
+   * @return {@code target} with annotations from {@code src} that are not already present on {@code
+   *     target} and are not excluded by {@code exclude}
+   */
+  public static AnnotatedType forwardAnnotations(
+      AnnotatedType src, AnnotatedType target, Annotation... exclude) {
+    Set<Class<? extends Annotation>> excluded =
+        Stream.concat(stream(target.getAnnotations()), stream(exclude))
+            .map(Annotation::annotationType)
+            .collect(toSet());
+    AnnotatedType result =
+        withExtraAnnotations(
+            target,
+            Arrays.stream(src.getAnnotations())
+                .filter(annotation -> !excluded.contains(annotation.annotationType()))
+                .toArray(Annotation[]::new));
+    validateAnnotationUsage(result);
+    return result;
+  }
+
   public static AnnotatedType notNull(AnnotatedType type) {
     return withExtraAnnotations(type, NOT_NULL);
   }
@@ -216,6 +207,11 @@ public final class TypeSupport {
       }
 
       @Override
+      public String constraint() {
+        return PropertyConstraint.DECLARATION;
+      }
+
+      @Override
       public Class<? extends Annotation> annotationType() {
         return WithLength.class;
       }
@@ -235,6 +231,19 @@ public final class TypeSupport {
         hash += ("min".hashCode() * 127) ^ Integer.valueOf(this.min()).hashCode();
         hash += ("max".hashCode() * 127) ^ Integer.valueOf(this.max()).hashCode();
         return hash;
+      }
+
+      @Override
+      public String toString() {
+        return "@"
+            + WithLength.class.getName()
+            + "{min="
+            + min()
+            + ", max="
+            + max()
+            + ", constraint="
+            + constraint()
+            + "}";
       }
     };
   }
@@ -267,7 +276,7 @@ public final class TypeSupport {
 
           @Override
           public Type getOwnerType() {
-            // We require the class is top-level.
+            // We require the class to be top-level.
             return null;
           }
 
@@ -304,8 +313,8 @@ public final class TypeSupport {
       }
 
       // @Override as of Java 9
-      @SuppressWarnings("Since15")
       public AnnotatedType getAnnotatedOwnerType() {
+        // We require the class to be top-level.
         return null;
       }
 
@@ -335,17 +344,12 @@ public final class TypeSupport {
       }
 
       @Override
-      public boolean equals(Object obj) {
-        if (!(obj instanceof AnnotatedParameterizedType)) {
+      public boolean equals(Object other) {
+        if (other instanceof AnnotatedType) {
+          return annotatedTypeEquals(this, (AnnotatedType) other);
+        } else {
           return false;
         }
-        AnnotatedParameterizedType other = (AnnotatedParameterizedType) obj;
-        // Can't call getAnnotatedOwnerType on Java 8, but since our own implementation always
-        // returns null, comparing getType().getOwnerType() via getType() is sufficient.
-        return Objects.equals(getType(), other.getType())
-            && Arrays.equals(
-                getAnnotatedActualTypeArguments(), other.getAnnotatedActualTypeArguments())
-            && Arrays.equals(getAnnotations(), other.getAnnotations());
       }
 
       @Override
@@ -471,12 +475,6 @@ public final class TypeSupport {
     public AnnotatedType getAnnotatedGenericComponentType() {
       return ((AnnotatedArrayType) base).getAnnotatedGenericComponentType();
     }
-
-    // @Override as of Java 9
-    @SuppressWarnings("Since15")
-    public AnnotatedType getAnnotatedOwnerType() {
-      throw new UnsupportedOperationException("Not implemented");
-    }
   }
 
   private static class AugmentedParameterizedType extends AugmentedAnnotatedType
@@ -489,12 +487,6 @@ public final class TypeSupport {
     @Override
     public AnnotatedType[] getAnnotatedActualTypeArguments() {
       return ((AnnotatedParameterizedType) base).getAnnotatedActualTypeArguments();
-    }
-
-    // @Override as of Java 9
-    @SuppressWarnings("Since15")
-    public AnnotatedType getAnnotatedOwnerType() {
-      throw new UnsupportedOperationException("Not implemented");
     }
   }
 
@@ -558,9 +550,12 @@ public final class TypeSupport {
     }
 
     @Override
-    public boolean equals(Object obj) {
-      throw new UnsupportedOperationException(
-          "equals() is not supported as its behavior isn't specified");
+    public boolean equals(Object other) {
+      if (other instanceof AnnotatedType) {
+        return annotatedTypeEquals(this, (AnnotatedType) other);
+      } else {
+        return false;
+      }
     }
 
     @Override
@@ -568,5 +563,61 @@ public final class TypeSupport {
       throw new UnsupportedOperationException(
           "hashCode() is not supported as its behavior isn't specified");
     }
+
+    // @Override as of Java 9
+    public AnnotatedType getAnnotatedOwnerType() {
+      // This can only be invoked on Java 9+, where the method is available on base.
+      try {
+        return (AnnotatedType) AnnotatedType.class.getMethod("getAnnotatedOwnerType").invoke(base);
+      } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+        throw new IllegalStateException(e);
+      }
+    }
+  }
+
+  // Workaround for https://bugs.java.com/bugdatabase/view_bug?bug_id=8058202, which is only fixed
+  // in JDK 12+: AnnotatedType does not override equals().
+  public static boolean annotatedTypeEquals(AnnotatedType left, AnnotatedType right) {
+    if (left instanceof AnnotatedParameterizedType) {
+      if (!(right instanceof AnnotatedParameterizedType)) {
+        return false;
+      }
+      AnnotatedType[] leftTypeArguments =
+          ((AnnotatedParameterizedType) left).getAnnotatedActualTypeArguments();
+      AnnotatedType[] rightTypeArguments =
+          ((AnnotatedParameterizedType) right).getAnnotatedActualTypeArguments();
+      if (leftTypeArguments.length != rightTypeArguments.length
+          || !IntStream.range(0, leftTypeArguments.length)
+              .allMatch(i -> annotatedTypeEquals(leftTypeArguments[i], rightTypeArguments[i]))) {
+        return false;
+      }
+    } else if (left instanceof AnnotatedArrayType) {
+      if (!(right instanceof AnnotatedArrayType)) {
+        return false;
+      }
+      if (!annotatedTypeEquals(
+          ((AnnotatedArrayType) left).getAnnotatedGenericComponentType(),
+          ((AnnotatedArrayType) right).getAnnotatedGenericComponentType())) {
+        return false;
+      }
+    } else if (left instanceof AnnotatedWildcardType || left instanceof AnnotatedTypeVariable) {
+      throw new UnsupportedOperationException(
+          "AnnotatedWildcardType and AnnotatedTypeVariable are not supported");
+    } else {
+      // Ensure that e.g. "Map" (AnnotatedType) and "Map<List, String>" (AnnotatedParameterizedType)
+      // are not equal.
+      if (right instanceof AnnotatedArrayType
+          || right instanceof AnnotatedParameterizedType
+          || right instanceof AnnotatedTypeVariable
+          || right instanceof AnnotatedWildcardType) {
+        return false;
+      }
+    }
+    // At this point, left and right implement the same subsets of all five interfaces and all the
+    // aspects of the more specific types are identical.
+    // Note: This ignores getAnnotatedOwnerType, which has been added in Java 9. For our purposes,
+    // the annotations on the owner don't matter and the owner itself is compared via Type.
+    return left.getType().equals(right.getType())
+        && Arrays.equals(left.getAnnotations(), right.getAnnotations());
   }
 }

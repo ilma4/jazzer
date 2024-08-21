@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.collection;
@@ -22,26 +15,32 @@ import static java.util.Collections.emptyList;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
 import com.code_intelligence.jazzer.mutation.annotation.WithSize;
-import com.code_intelligence.jazzer.mutation.api.ChainedMutatorFactory;
-import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.mutator.lang.LangMutators;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
+import com.code_intelligence.jazzer.mutation.utils.PropertyConstraint;
 import java.lang.reflect.AnnotatedType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @SuppressWarnings("unchecked")
 public class ListMutatorTest {
-  public static final MutatorFactory FACTORY =
-      new ChainedMutatorFactory(LangMutators.newFactory(), CollectionMutators.newFactory());
+  ChainedMutatorFactory factory;
 
-  private static SerializingMutator<@NotNull List<@NotNull Integer>> defaultListMutator() {
+  @BeforeEach
+  void createFactory() {
+    factory =
+        ChainedMutatorFactory.of(LangMutators.newFactories(), CollectionMutators.newFactories());
+  }
+
+  private SerializingMutator<@NotNull List<@NotNull Integer>> defaultListMutator() {
     AnnotatedType type = new TypeHolder<@NotNull List<@NotNull Integer>>() {}.annotatedType();
-    return (SerializingMutator<@NotNull List<@NotNull Integer>>) FACTORY.createOrThrow(type);
+    return (SerializingMutator<@NotNull List<@NotNull Integer>>) factory.createOrThrow(type);
   }
 
   @Test
@@ -68,7 +67,7 @@ public class ListMutatorTest {
             @NotNull @WithSize(min = 2, max = 3) List<@NotNull Integer>>() {}.annotatedType();
 
     SerializingMutator<@NotNull List<@NotNull Integer>> mutator =
-        (SerializingMutator<@NotNull List<@NotNull Integer>>) FACTORY.createOrThrow(type);
+        (SerializingMutator<@NotNull List<@NotNull Integer>>) factory.createOrThrow(type);
 
     assertThat(mutator.toString()).isEqualTo("List<Integer>");
     List<Integer> list;
@@ -191,6 +190,8 @@ public class ListMutatorTest {
         mockPseudoRandom(
             // action
             2,
+            // Mutate a chunk instead of a single element.
+            8,
             // number of elements to mutate
             2,
             // first index to mutate at
@@ -308,5 +309,16 @@ public class ListMutatorTest {
       list = mutator.crossOver(list, otherList, prng);
     }
     assertThat(list).containsExactly(0, 1, 7, 8, 9, 5, 6, 7, 8, 9).inOrder();
+  }
+
+  @Test
+  void propagateConstraint() {
+    SerializingMutator<@NotNull List<List<Integer>>> mutator =
+        (SerializingMutator<@NotNull List<List<Integer>>>)
+            factory.createOrThrow(
+                new TypeHolder<
+                    @NotNull(constraint = PropertyConstraint.RECURSIVE) List<
+                        List<Integer>>>() {}.annotatedType());
+    assertThat(mutator.toString()).isEqualTo("List<List<Integer>>");
   }
 }

@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.lang;
@@ -23,9 +16,11 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -33,6 +28,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 @SuppressWarnings("unchecked")
 class IntegralMutatorTest {
+  ChainedMutatorFactory factory;
+
+  @BeforeEach
+  void createFactory() {
+    factory = ChainedMutatorFactory.of(LangMutators.newFactories());
+  }
+
   static Stream<Arguments> forceInRangeCases() {
     return Stream.of(
         arguments(0, 0, 1),
@@ -65,12 +67,27 @@ class IntegralMutatorTest {
     }
   }
 
+  static Stream<Arguments> forceInRangeMinMaxCases() {
+    return Stream.of(
+        arguments(Long.MAX_VALUE, 0, Long.MAX_VALUE, Long.MAX_VALUE),
+        arguments(Long.MAX_VALUE, Long.MIN_VALUE, Long.MAX_VALUE, Long.MAX_VALUE),
+        arguments(Long.MIN_VALUE, Long.MIN_VALUE, Long.MAX_VALUE, Long.MIN_VALUE),
+        arguments(0, Long.MIN_VALUE, Long.MAX_VALUE, 0),
+        arguments(0, 0, 0, 0),
+        arguments(1, 0, 1, 1));
+  }
+
+  @ParameterizedTest
+  @MethodSource("forceInRangeMinMaxCases")
+  void testForceInRangeMinMax(long value, long minValue, long maxValue, long expected) {
+    assertThat(forceInRange(value, minValue, maxValue)).isEqualTo(expected);
+  }
+
   @Test
   void testCrossOver() {
     SerializingMutator<Long> mutator =
         (SerializingMutator<Long>)
-            LangMutators.newFactory()
-                .createOrThrow(new TypeHolder<@NotNull Long>() {}.annotatedType());
+            factory.createOrThrow(new TypeHolder<@NotNull Long>() {}.annotatedType());
     // cross over mean values
     try (MockPseudoRandom prng = mockPseudoRandom(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)) {
       assertThat(mutator.crossOver(0L, 0L, prng)).isEqualTo(0);

@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.collection;
@@ -24,26 +17,32 @@ import static java.util.Collections.emptyMap;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
 import com.code_intelligence.jazzer.mutation.annotation.WithSize;
-import com.code_intelligence.jazzer.mutation.api.ChainedMutatorFactory;
-import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.mutator.lang.LangMutators;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
+import com.code_intelligence.jazzer.mutation.utils.PropertyConstraint;
 import java.lang.reflect.AnnotatedType;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @SuppressWarnings("unchecked")
 class MapMutatorTest {
-  public static final MutatorFactory FACTORY =
-      new ChainedMutatorFactory(LangMutators.newFactory(), CollectionMutators.newFactory());
+  ChainedMutatorFactory factory;
 
-  private static SerializingMutator<Map<Integer, Integer>> defaultTestMapMutator() {
+  @BeforeEach
+  void createFactory() {
+    factory =
+        ChainedMutatorFactory.of(LangMutators.newFactories(), CollectionMutators.newFactories());
+  }
+
+  private SerializingMutator<Map<Integer, Integer>> defaultTestMapMutator() {
     AnnotatedType type =
         new TypeHolder<@NotNull Map<@NotNull Integer, @NotNull Integer>>() {}.annotatedType();
-    return (SerializingMutator<Map<Integer, Integer>>) FACTORY.createOrThrow(type);
+    return (SerializingMutator<Map<Integer, Integer>>) factory.createOrThrow(type);
   }
 
   @Test
@@ -52,8 +51,8 @@ class MapMutatorTest {
         new TypeHolder<
             @NotNull @WithSize(max = 3) Map<@NotNull String, @NotNull String>>() {}.annotatedType();
     SerializingMutator<Map<String, String>> mutator =
-        (SerializingMutator<Map<String, String>>) FACTORY.createOrThrow(type);
-    assertThat(mutator.toString()).isEqualTo("Map<String,String>");
+        (SerializingMutator<Map<String, String>>) factory.createOrThrow(type);
+    assertThat(mutator.toString()).isEqualTo("Map<String, String>");
 
     // Initialize new map
     Map<String, String> map;
@@ -103,11 +102,8 @@ class MapMutatorTest {
 
   @Test
   void mapDelete() {
-    AnnotatedType type =
-        new TypeHolder<@NotNull Map<@NotNull Integer, @NotNull Integer>>() {}.annotatedType();
-    SerializingMutator<Map<Integer, Integer>> mutator =
-        (SerializingMutator<Map<Integer, Integer>>) FACTORY.createOrThrow(type);
-    assertThat(mutator.toString()).isEqualTo("Map<Integer,Integer>");
+    SerializingMutator<Map<Integer, Integer>> mutator = defaultTestMapMutator();
+    assertThat(mutator.toString()).isEqualTo("Map<Integer, Integer>");
 
     Map<Integer, Integer> map = asMap(1, 10, 2, 20, 3, 30, 4, 40, 5, 50, 6, 60);
 
@@ -126,11 +122,8 @@ class MapMutatorTest {
 
   @Test
   void mapMutateValues() {
-    AnnotatedType type =
-        new TypeHolder<@NotNull Map<@NotNull Integer, @NotNull Integer>>() {}.annotatedType();
-    SerializingMutator<Map<Integer, Integer>> mutator =
-        (SerializingMutator<Map<Integer, Integer>>) FACTORY.createOrThrow(type);
-    assertThat(mutator.toString()).isEqualTo("Map<Integer,Integer>");
+    SerializingMutator<Map<Integer, Integer>> mutator = defaultTestMapMutator();
+    assertThat(mutator.toString()).isEqualTo("Map<Integer, Integer>");
 
     Map<Integer, Integer> map = asMap(1, 10, 2, 20, 3, 30, 4, 40, 5, 50, 6, 60);
 
@@ -159,11 +152,8 @@ class MapMutatorTest {
 
   @Test
   void mapMutateKeys() {
-    AnnotatedType type =
-        new TypeHolder<@NotNull Map<@NotNull Integer, @NotNull Integer>>() {}.annotatedType();
-    SerializingMutator<Map<Integer, Integer>> mutator =
-        (SerializingMutator<Map<Integer, Integer>>) FACTORY.createOrThrow(type);
-    assertThat(mutator.toString()).isEqualTo("Map<Integer,Integer>");
+    SerializingMutator<Map<Integer, Integer>> mutator = defaultTestMapMutator();
+    assertThat(mutator.toString()).isEqualTo("Map<Integer, Integer>");
 
     Map<Integer, Integer> map = asMap(1, 10, 2, 20, 3, 30, 4, 40, 5, 50, 6, 60);
 
@@ -195,8 +185,8 @@ class MapMutatorTest {
     AnnotatedType type =
         new TypeHolder<@NotNull Map<@NotNull Boolean, @NotNull Boolean>>() {}.annotatedType();
     SerializingMutator<Map<Boolean, Boolean>> mutator =
-        (SerializingMutator<Map<Boolean, Boolean>>) FACTORY.createOrThrow(type);
-    assertThat(mutator.toString()).isEqualTo("Map<Boolean,Boolean>");
+        (SerializingMutator<Map<Boolean, Boolean>>) factory.createOrThrow(type);
+    assertThat(mutator.toString()).isEqualTo("Map<Boolean, Boolean>");
 
     // No new keys can be generated for this map.
     Map<Boolean, Boolean> map = asMap(false, false, true, false);
@@ -305,7 +295,7 @@ class MapMutatorTest {
             @NotNull Map<@NotNull List<@NotNull Integer>, @NotNull Integer>>() {}.annotatedType();
     SerializingMutator<@NotNull Map<@NotNull List<@NotNull Integer>, @NotNull Integer>> mutator =
         (SerializingMutator<@NotNull Map<@NotNull List<@NotNull Integer>, @NotNull Integer>>)
-            FACTORY.createOrThrow(type);
+            factory.createOrThrow(type);
 
     Map<List<Integer>, Integer> map =
         asMap(
@@ -391,7 +381,7 @@ class MapMutatorTest {
             @NotNull Map<@NotNull Integer, @NotNull List<@NotNull Integer>>>() {}.annotatedType();
     SerializingMutator<@NotNull Map<@NotNull Integer, @NotNull List<@NotNull Integer>>> mutator =
         (SerializingMutator<@NotNull Map<@NotNull Integer, @NotNull List<@NotNull Integer>>>)
-            FACTORY.createOrThrow(type);
+            factory.createOrThrow(type);
 
     Map<Integer, List<Integer>> map =
         asMap(
@@ -467,5 +457,16 @@ class MapMutatorTest {
               asMutableList(6))
           .inOrder();
     }
+  }
+
+  @Test
+  void propagateConstraint() {
+    SerializingMutator<@NotNull Map<String, List<Integer>>> mutator =
+        (SerializingMutator<@NotNull Map<String, List<Integer>>>)
+            factory.createOrThrow(
+                new TypeHolder<
+                    @NotNull(constraint = PropertyConstraint.RECURSIVE) Map<
+                        String, List<Integer>>>() {}.annotatedType());
+    assertThat(mutator.toString()).isEqualTo("Map<String, List<Integer>>");
   }
 }

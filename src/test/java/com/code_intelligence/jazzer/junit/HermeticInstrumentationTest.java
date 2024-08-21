@@ -1,16 +1,11 @@
-// Copyright 2022 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 
 package com.code_intelligence.jazzer.junit;
 
@@ -28,6 +23,7 @@ import static org.junit.platform.testkit.engine.EventType.DYNAMIC_TEST_REGISTERE
 import static org.junit.platform.testkit.engine.EventType.FINISHED;
 import static org.junit.platform.testkit.engine.EventType.REPORTING_ENTRY_PUBLISHED;
 import static org.junit.platform.testkit.engine.EventType.STARTED;
+import static org.junit.platform.testkit.engine.TestExecutionResultConditions.cause;
 import static org.junit.platform.testkit.engine.TestExecutionResultConditions.instanceOf;
 
 import com.code_intelligence.jazzer.api.FuzzerSecurityIssueLow;
@@ -107,7 +103,9 @@ public class HermeticInstrumentationTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, CLAZZ, FUZZ_TEST_1, INVOCATION)),
                 displayName("<empty input>"),
-                finishedWithFailure(instanceOf(FuzzerSecurityIssueLow.class))),
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(FuzzerSecurityIssueLow.class)))),
             event(type(STARTED), test(uniqueIdSubstrings(ENGINE, CLAZZ, UNIT_TEST_1))),
             event(
                 type(FINISHED),
@@ -124,7 +122,9 @@ public class HermeticInstrumentationTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, CLAZZ, FUZZ_TEST_2, INVOCATION)),
                 displayName("<empty input>"),
-                finishedWithFailure(instanceOf(FuzzerSecurityIssueLow.class))),
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(FuzzerSecurityIssueLow.class)))),
             event(type(STARTED), test(uniqueIdSubstrings(ENGINE, CLAZZ, UNIT_TEST_2))),
             event(
                 type(FINISHED),

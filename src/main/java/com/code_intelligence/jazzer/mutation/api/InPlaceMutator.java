@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.api;
@@ -39,7 +32,7 @@ package com.code_intelligence.jazzer.mutation.api;
  *
  * @param <T> the reference type this mutator operates on
  */
-public interface InPlaceMutator<T> extends Debuggable {
+public interface InPlaceMutator<T> extends Debuggable, MutatorBase {
   /**
    * Implementations
    *
@@ -75,13 +68,4 @@ public interface InPlaceMutator<T> extends Debuggable {
    * </ul>
    */
   void crossOverInPlace(T reference, T otherReference, PseudoRandom prng);
-
-  /**
-   * Whether the type {@code T} mutated by this mutator has a fixed size in memory. This information
-   * can be used by mutators for collections of {@code T}s.
-   *
-   * <p>Examples of types with fixed size include primitive types, enums, and classes with only
-   * primitive types and enums as members.
-   */
-  boolean hasFixedSize();
 }

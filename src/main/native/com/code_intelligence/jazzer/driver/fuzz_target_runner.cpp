@@ -1,16 +1,10 @@
-// Copyright 2021 Code Intelligence GmbH
+// Copyright 2024 Code Intelligence GmbH
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// By downloading, you agree to the Code Intelligence Jazzer Terms and
+// Conditions.
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// The Code Intelligence Jazzer Terms and Conditions are provided in
+// LICENSE-JAZZER.txt located in the root directory of the project.
 
 /**
  * A native wrapper around the FuzzTargetRunner Java class that executes it as a
@@ -44,7 +38,7 @@ jmethodID gMutateOneId;
 jmethodID gCrossOverId;
 JavaVM *gJavaVm;
 JNIEnv *gEnv;
-jboolean gUseExperimentalMutator;
+jboolean gUseMutatorFramework;
 
 // A libFuzzer-registered callback that outputs the crashing input, but does
 // not include a stack trace.
@@ -65,7 +59,7 @@ int testOneInput(const uint8_t *data, const std::size_t size) {
 
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
                                           size_t MaxSize, unsigned int Seed) {
-  if (gUseExperimentalMutator) {
+  if (gUseMutatorFramework) {
     JNIEnv &env = *gEnv;
     jint jsize =
         std::min(Size, static_cast<size_t>(std::numeric_limits<jint>::max()));
@@ -88,7 +82,7 @@ extern "C" size_t LLVMFuzzerCustomCrossOver(const uint8_t *Data1, size_t Size1,
                                             const uint8_t *Data2, size_t Size2,
                                             uint8_t *Out, size_t MaxOutSize,
                                             unsigned int Seed) {
-  if (gUseExperimentalMutator) {
+  if (gUseMutatorFramework) {
     JNIEnv &env = *gEnv;
     jint jsize1 =
         std::min(Size1, static_cast<size_t>(std::numeric_limits<jint>::max()));
@@ -137,8 +131,8 @@ void DumpJvmStackTraces() {
 [[maybe_unused]] jint
 Java_com_code_1intelligence_jazzer_runtime_FuzzTargetRunnerNatives_startLibFuzzer(
     JNIEnv *env, jclass, jobjectArray args, jclass runner,
-    jboolean useExperimentalMutator) {
-  gUseExperimentalMutator = useExperimentalMutator;
+    jboolean useMutatorFramework) {
+  gUseMutatorFramework = useMutatorFramework;
   gEnv = env;
   env->GetJavaVM(&gJavaVm);
   gRunner = reinterpret_cast<jclass>(env->NewGlobalRef(runner));

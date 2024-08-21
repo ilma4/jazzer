@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.collection;
@@ -26,8 +19,8 @@ import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMuta
 import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.insertRandomChunk;
 import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.mutateRandomKeysChunk;
 import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.mutateRandomValuesChunk;
-import static com.code_intelligence.jazzer.mutation.support.Preconditions.check;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.require;
+import static com.code_intelligence.jazzer.mutation.support.PropertyConstraintSupport.propagatePropertyConstraints;
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.parameterTypesIfParameterized;
 import static java.lang.Math.min;
 import static java.lang.String.format;
@@ -35,6 +28,7 @@ import static java.util.stream.Collectors.toMap;
 
 import com.code_intelligence.jazzer.mutation.annotation.WithSize;
 import com.code_intelligence.jazzer.mutation.api.Debuggable;
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.PseudoRandom;
 import com.code_intelligence.jazzer.mutation.api.SerializingInPlaceMutator;
@@ -52,19 +46,21 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-final class MapMutatorFactory extends MutatorFactory {
+final class MapMutatorFactory implements MutatorFactory {
   @Override
-  public Optional<SerializingMutator<?>> tryCreate(AnnotatedType type, MutatorFactory factory) {
+  public Optional<SerializingMutator<?>> tryCreate(
+      AnnotatedType type, ExtendedMutatorFactory factory) {
     return parameterTypesIfParameterized(type, Map.class)
         .map(
             parameterTypes ->
                 parameterTypes.stream()
+                    .map(innerType -> propagatePropertyConstraints(type, innerType))
                     .map(factory::tryCreate)
                     .flatMap(StreamSupport::getOrEmpty)
                     .collect(Collectors.toList()))
+        .filter(elementMutators -> elementMutators.size() == 2)
         .map(
             elementMutators -> {
-              check(elementMutators.size() == 2);
               int min = MapMutator.DEFAULT_MIN_SIZE;
               int max = MapMutator.DEFAULT_MAX_SIZE;
               for (Annotation annotation : type.getDeclaredAnnotations()) {
@@ -215,7 +211,7 @@ final class MapMutatorFactory extends MutatorFactory {
     public String toDebugString(Predicate<Debuggable> isInCycle) {
       return "Map<"
           + keyMutator.toDebugString(isInCycle)
-          + ","
+          + ", "
           + valueMutator.toDebugString(isInCycle)
           + ">";
     }
@@ -225,6 +221,9 @@ final class MapMutatorFactory extends MutatorFactory {
     }
 
     private int maxInitialSize() {
+      if (keyMutator.requiresRecursionBreaking() || valueMutator.requiresRecursionBreaking()) {
+        return minInitialSize();
+      }
       return min(maxSize, minSize + 1);
     }
   }

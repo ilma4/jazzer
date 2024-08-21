@@ -1,16 +1,11 @@
-// Copyright 2021 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 
 package com.code_intelligence.jazzer.instrumentor
 
@@ -22,11 +17,13 @@ import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.IntInsnNode
+import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.LookupSwitchInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.TableSwitchInsnNode
+import org.objectweb.asm.tree.VarInsnNode
 
 internal class TraceDataFlowInstrumentor(
     private val types: Set<InstrumentationType>,
@@ -91,6 +88,11 @@ internal class TraceDataFlowInstrumentor(
                     // sorted by unsigned value.
                     val caseValues = when (inst) {
                         is LookupSwitchInsnNode -> {
+                            // If the switch is over String values, find out the actual values and not the hashes, and
+                            // report them to libFuzzer in the switch's default case.
+                            if (instrumentSwitchOverStrings(method, inst)) {
+                                continue@loop
+                            }
                             if (inst.keys.isEmpty() || (0 <= inst.keys.first() && inst.keys.last() < 256)) {
                                 continue@loop
                             }
@@ -136,6 +138,99 @@ internal class TraceDataFlowInstrumentor(
                 }
             }
         }
+    }
+
+    /**
+     * Instruments a switch instruction over Strings to report the actual values to libFuzzer.
+     * Return true if the instrumentation was successful.
+     * TODO: this might stop working if we add instrumentation to e.g. hashCode method.
+     *       Can the switch be instrumented in a more generic way?
+     */
+    private fun instrumentSwitchOverStrings(
+        method: MethodNode,
+        switchInsn: LookupSwitchInsnNode,
+    ): Boolean {
+        val hashCodeCall: AbstractInsnNode = switchInsn.previous
+        when (hashCodeCall) {
+            is MethodInsnNode -> {
+                if (hashCodeCall.name != "hashCode") {
+                    return false
+                }
+                if (hashCodeCall.owner != "java/lang/String") {
+                    return false
+                }
+            }
+            else -> {
+                return false
+            }
+        }
+        // Copy the variable from ALOAD instruction before the hashCode call
+        val query = hashCodeCall.previous
+        val variableN = (query as? VarInsnNode)?.`var` ?: return false
+
+        // So far, it seems that there is always a default label present.
+        val defaultLabel = switchInsn.dflt ?: return false
+        val labels = switchInsn.labels ?: return false
+
+        // Extract the string values from the LDC instructions for each label in the switch.
+        val cases = mutableListOf<String>()
+        for (label in labels) {
+            if (label !is LabelNode) {
+                continue
+            }
+            var current: AbstractInsnNode = label
+            while (true) {
+                current = current.next
+                // lookupswitch compares the keys to the actual values after the initial equality check of the hash codes
+                when (current) {
+                    is LdcInsnNode -> {
+                        if (current.cst is String) {
+                            cases.add(current.cst as String)
+                        }
+                        break
+                    }
+                }
+            }
+        }
+
+        // Given a switch on a string:
+        // switch(str) {
+        //   case "foo": ...
+        //   case "bar": ...
+        //   default: ...
+        // }
+        // We change it to:
+        // switch(str) {
+        //   case "foo": ...
+        //   case "bar": ...
+        //   default:
+        //     str.equals("foo");
+        //     str.equals("bar");
+        //     ...
+        // }
+        val instrumentationBlock = InsnList()
+        // load the switch variable to the stack
+        instrumentationBlock.add(VarInsnNode(Opcodes.ALOAD, variableN))
+        cases.forEach {
+            // duplicate the switch variable
+            instrumentationBlock.add(InsnNode(Opcodes.DUP))
+            // load the string constant to the stack
+            instrumentationBlock.add(LdcInsnNode(it))
+            // call the equals method on the switch variable with the string constant as argument
+            instrumentationBlock.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/String", "equals", "(Ljava/lang/Object;)Z", false))
+            // pop the result of the equals method from stack
+            instrumentationBlock.add(InsnNode(Opcodes.POP))
+        }
+        // pop the switch variable from stack
+        instrumentationBlock.add(InsnNode(Opcodes.POP))
+        // insert the new instructions after the frame node that follows the default label bytecode instruction
+        // F_NEW LNNNNN... ;; default label
+        // F_NEW: FRAME([java/lang/String, 1]) - null
+        if (defaultLabel.next != null) {
+            method.instructions.insert(defaultLabel.next, instrumentationBlock)
+            return true
+        }
+        return false
     }
 
     private fun InsnList.pushFakePc() {

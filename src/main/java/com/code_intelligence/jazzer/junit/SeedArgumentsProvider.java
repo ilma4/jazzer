@@ -1,16 +1,11 @@
-// Copyright 2022 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 
 package com.code_intelligence.jazzer.junit;
 
@@ -44,7 +39,7 @@ class SeedArgumentsProvider implements ArgumentsProvider {
   @Override
   public Stream<? extends Arguments> provideArguments(ExtensionContext extensionContext)
       throws IOException {
-    if (runFromCommandLine(extensionContext)) {
+    if (runFromCommandLine(extensionContext) && isFuzzing(extensionContext)) {
       // libFuzzer always runs on the file-based seeds first anyway and the additional visual
       // indication provided by test invocations for seeds isn't effective on the command line, so
       // we skip these invocations.
@@ -58,13 +53,20 @@ class SeedArgumentsProvider implements ArgumentsProvider {
         Stream.of(new SimpleImmutableEntry<>("<empty input>", new byte[0]));
     rawSeeds = Stream.concat(rawSeeds, walkInputs(testClass, testMethod));
 
-    if (Utils.isCoverageAgentPresent()
-        && Files.isDirectory(Utils.generatedCorpusPath(testClass, testMethod))) {
-      rawSeeds =
-          Stream.concat(
-              rawSeeds,
-              walkInputsInPath(
-                  Utils.generatedCorpusPath(testClass, testMethod), Integer.MAX_VALUE));
+    if (Utils.isGatheringCoverage()) {
+      Path generatedCorpusPath = Utils.generatedCorpusPath(testClass, testMethod);
+      // Generated corpus entries are automatically created and should be available,
+      // except when no fuzzing was performed until now.
+      if (Files.isDirectory(generatedCorpusPath)) {
+        rawSeeds =
+            Stream.concat(rawSeeds, walkInputsInPath(generatedCorpusPath, Integer.MAX_VALUE));
+      }
+      // Also add additionally specified files and directories to the input list,
+      // e.g. cifuzz uses this feature to specify additional seed directories.
+      for (String filesOrDir : Utils.getCorpusFilesOrDirs(extensionContext)) {
+        rawSeeds =
+            Stream.concat(rawSeeds, walkInputsInPath(Paths.get(filesOrDir), Integer.MAX_VALUE));
+      }
     }
 
     SeedSerializer serializer = SeedSerializer.of(testMethod);

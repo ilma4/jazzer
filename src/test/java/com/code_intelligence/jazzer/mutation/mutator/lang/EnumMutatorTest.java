@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.lang;
@@ -22,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
 import java.io.ByteArrayInputStream;
@@ -29,9 +23,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class EnumMutatorTest {
+  ChainedMutatorFactory factory;
+
+  @BeforeEach
+  void createFactory() {
+    factory = ChainedMutatorFactory.of(LangMutators.newFactories());
+  }
+
   enum TestEnumOne {
     A
   }
@@ -46,8 +48,7 @@ class EnumMutatorTest {
   void testBoxed() {
     SerializingMutator<TestEnum> mutator =
         (SerializingMutator<TestEnum>)
-            LangMutators.newFactory()
-                .createOrThrow(new TypeHolder<@NotNull TestEnum>() {}.annotatedType());
+            factory.createOrThrow(new TypeHolder<@NotNull TestEnum>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("Enum<TestEnum>");
     TestEnum cl;
     try (MockPseudoRandom prng = mockPseudoRandom(0)) {
@@ -81,8 +82,7 @@ class EnumMutatorTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> {
-          LangMutators.newFactory()
-              .createOrThrow(new TypeHolder<@NotNull TestEnumOne>() {}.annotatedType());
+          factory.createOrThrow(new TypeHolder<@NotNull TestEnumOne>() {}.annotatedType());
         },
         "When trying to build mutators for Enum with one value, an Exception should be thrown.");
   }
@@ -91,8 +91,7 @@ class EnumMutatorTest {
   void testEnumBasedOnInvalidInput() throws IOException {
     SerializingMutator<TestEnum> mutator =
         (SerializingMutator<TestEnum>)
-            LangMutators.newFactory()
-                .createOrThrow(new TypeHolder<@NotNull TestEnum>() {}.annotatedType());
+            factory.createOrThrow(new TypeHolder<@NotNull TestEnum>() {}.annotatedType());
     ByteArrayOutputStream bo = new ByteArrayOutputStream();
     DataOutputStream os = new DataOutputStream(bo);
     // Valid values

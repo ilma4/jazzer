@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.collection;
@@ -23,14 +16,17 @@ import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkCros
 import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.MutationAction.pickRandomMutationAction;
 import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.deleteRandomChunk;
 import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.insertRandomChunk;
+import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.mutateRandomAt;
 import static com.code_intelligence.jazzer.mutation.mutator.collection.ChunkMutations.mutateRandomChunk;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.require;
+import static com.code_intelligence.jazzer.mutation.support.PropertyConstraintSupport.propagatePropertyConstraints;
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.parameterTypeIfParameterized;
 import static java.lang.Math.min;
 import static java.lang.String.format;
 
 import com.code_intelligence.jazzer.mutation.annotation.WithSize;
 import com.code_intelligence.jazzer.mutation.api.Debuggable;
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.PseudoRandom;
 import com.code_intelligence.jazzer.mutation.api.SerializingInPlaceMutator;
@@ -46,15 +42,20 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-final class ListMutatorFactory extends MutatorFactory {
+final class ListMutatorFactory implements MutatorFactory {
   @Override
-  public Optional<SerializingMutator<?>> tryCreate(AnnotatedType type, MutatorFactory factory) {
-    Optional<WithSize> withSize = Optional.ofNullable(type.getAnnotation(WithSize.class));
-    int minSize = withSize.map(WithSize::min).orElse(ListMutator.DEFAULT_MIN_SIZE);
-    int maxSize = withSize.map(WithSize::max).orElse(ListMutator.DEFAULT_MAX_SIZE);
+  public Optional<SerializingMutator<?>> tryCreate(
+      AnnotatedType type, ExtendedMutatorFactory factory) {
     return parameterTypeIfParameterized(type, List.class)
+        .map(innerType -> propagatePropertyConstraints(type, innerType))
         .flatMap(factory::tryCreate)
-        .map(elementMutator -> new ListMutator<>(elementMutator, minSize, maxSize));
+        .map(
+            elementMutator -> {
+              Optional<WithSize> withSize = Optional.ofNullable(type.getAnnotation(WithSize.class));
+              int minSize = withSize.map(WithSize::min).orElse(ListMutator.DEFAULT_MIN_SIZE);
+              int maxSize = withSize.map(WithSize::max).orElse(ListMutator.DEFAULT_MAX_SIZE);
+              return new ListMutator<>(elementMutator, minSize, maxSize);
+            });
   }
 
   private static final class ListMutator<T> extends SerializingInPlaceMutator<List<T>> {
@@ -120,7 +121,12 @@ final class ListMutatorFactory extends MutatorFactory {
           insertRandomChunk(list, maxSize, elementMutator, prng);
           break;
         case MUTATE_CHUNK:
-          mutateRandomChunk(list, elementMutator, prng);
+          // Prioritize mutating a single element over a chunk mutation 70% of the time.
+          if (prng.indexIn(10) < 7) {
+            mutateRandomAt(list, elementMutator, prng);
+          } else {
+            mutateRandomChunk(list, elementMutator, prng);
+          }
           break;
         default:
           throw new IllegalStateException("unsupported action");
@@ -168,6 +174,9 @@ final class ListMutatorFactory extends MutatorFactory {
     }
 
     private int maxInitialSize() {
+      if (elementMutator.requiresRecursionBreaking()) {
+        return minInitialSize();
+      }
       return min(maxSize, minSize + 1);
     }
   }

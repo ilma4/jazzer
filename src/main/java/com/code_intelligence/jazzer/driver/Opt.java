@@ -1,29 +1,21 @@
 /*
- * Copyright 2022 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * This file also contains code licensed under Apache2 license.
  */
 
 package com.code_intelligence.jazzer.driver;
 
-import static com.code_intelligence.jazzer.Constants.JAZZER_VERSION;
 import static com.code_intelligence.jazzer.driver.OptParser.boolSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.stringListSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.stringSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.uint64Setting;
-import static java.lang.System.exit;
 
-import com.code_intelligence.jazzer.utils.Log;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,6 +56,14 @@ public final class Opt {
         "jvm_args",
         "Arguments to pass to the JVM (separator can be escaped with '\\', native launcher only)");
   }
+
+  // Whether Jazzer is running in fuzzing or regression test mode.
+  // As this part is only used by CLI or native launcher, default to true.
+  public static final OptItem<Boolean> isFuzzing =
+      boolSetting(
+          "fuzz",
+          true,
+          "Run in fuzzing mode (use 'false' for regression tests). Only used for JUnit fuzz tests");
 
   public static final OptItem<List<String>> additionalClassesExcludes =
       stringListSetting(
@@ -134,16 +134,17 @@ public final class Opt {
           "dump_classes_dir",
           "",
           "Directory to dump instrumented .class files into (if non-empty)");
-  public static final OptItem<Boolean> experimentalMutator =
-      boolSetting("experimental_mutator", false, "Use an experimental structured mutator");
-  public static final OptItem<Long> experimentalCrossOverFrequency =
+  public static final OptItem<Boolean> mutatorFramework =
+      boolSetting(
+          "mutator_framework", true, "Use the internal mutator framework to generate inputs");
+  public static final OptItem<Long> mutatorCrossOverFrequency =
       uint64Setting(
-          "experimental_cross_over_frequency",
+          "mutator_cross_over_frequency",
           100,
-          "(Used in experimental mutator) Frequency of cross-over mutations actually being executed"
+          "(Used in mutator framework) Frequency of cross-over mutations actually being executed"
               + " when the cross-over function is picked by the underlying fuzzing engine (~1/2 of"
               + " all mutations), other invocations perform type specific mutations via the"
-              + " experimental mutator. (0 = disabled, 1 = every call, 2 = every other call,"
+              + " mutator framework. (0 = disabled, 1 = every call, 2 = every other call,"
               + " etc.).");
   public static final OptItem<Boolean> fuzzNative =
       boolSetting(
@@ -224,6 +225,12 @@ public final class Opt {
   public static final OptItem<Boolean> ubsan =
       boolSetting(
           "ubsan", false, "Allow fuzzing of native libraries compiled with '-fsanitize=undefined'");
+  public static final OptItem<List<String>> listFuzzTests =
+      stringListSetting(
+          "list_fuzz_tests",
+          "Prints all fuzz test names in the given classes. If no classes are provided, all"
+              + " directories (but not JAR files) on the classpath are scanned for tests. If this"
+              + " parameter is given, all others are ignored. Only used for JUnit fuzz tests.");
 
   // Internal options:
 
@@ -239,16 +246,18 @@ public final class Opt {
   public static final OptItem<Boolean> conditionalHooks =
       boolSetting("conditional_hooks", false, null);
 
-  // Special driver options:
-
-  private static final OptItem<Boolean> help =
-      boolSetting("help", false, "Show this list of all available arguments");
   public static final OptItem<List<String>> instrumentOnly =
       stringListSetting(
           "instrument_only",
           ',',
           "Comma separated list of jar files to instrument. No fuzzing is performed.");
-  private static final OptItem<Boolean> version =
+
+  // Special driver options:
+
+  public static final OptItem<Boolean> help =
+      boolSetting("help", false, "Show this list of all available arguments");
+
+  public static final OptItem<Boolean> version =
       boolSetting("version", false, "Print version information");
 
   public static void registerAndValidateCommandLineArgs(List<Map.Entry<String, String>> cliArgs) {
@@ -260,14 +269,7 @@ public final class Opt {
     OptParser.registerConfigurationParameters(configurationParameterGetter);
   }
 
-  public static void handleHelpAndVersionArgs() {
-    if (help.get()) {
-      Log.println(OptParser.getHelpText());
-      exit(0);
-    }
-    if (version.get()) {
-      Log.println("Jazzer v" + JAZZER_VERSION);
-      exit(0);
-    }
+  public static String generateHelpText() {
+    return OptParser.getHelpText();
   }
 }

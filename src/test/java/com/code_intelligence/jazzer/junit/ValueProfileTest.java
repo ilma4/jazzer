@@ -1,21 +1,15 @@
-// Copyright 2022 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 
 package com.code_intelligence.jazzer.junit;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth8.assertThat;
 import static org.junit.Assume.assumeFalse;
 import static org.junit.Assume.assumeTrue;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
@@ -30,6 +24,7 @@ import static org.junit.platform.testkit.engine.EventConditions.uniqueIdSubstrin
 import static org.junit.platform.testkit.engine.EventType.DYNAMIC_TEST_REGISTERED;
 import static org.junit.platform.testkit.engine.EventType.FINISHED;
 import static org.junit.platform.testkit.engine.EventType.STARTED;
+import static org.junit.platform.testkit.engine.TestExecutionResultConditions.cause;
 import static org.junit.platform.testkit.engine.TestExecutionResultConditions.instanceOf;
 
 import com.code_intelligence.jazzer.api.FuzzerSecurityIssueMedium;
@@ -147,7 +142,9 @@ public class ValueProfileTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, CLAZZ, VALUE_PROFILE_FUZZ, INVOCATION + 3)),
                 displayName("Fuzzing..."),
-                finishedWithFailure(instanceOf(FuzzerSecurityIssueMedium.class))));
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(FuzzerSecurityIssueMedium.class)))));
 
     // Should crash on the exact input "Jazzer", with the crash emitted into the seed corpus.
     try (Stream<Path> crashFiles =

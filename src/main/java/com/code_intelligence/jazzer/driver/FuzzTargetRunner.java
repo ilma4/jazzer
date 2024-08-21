@@ -1,17 +1,12 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * This file also contains code licensed under Apache2 license.
  */
 
 package com.code_intelligence.jazzer.driver;
@@ -108,14 +103,14 @@ public final class FuzzTargetRunner {
       Opt.ignore.get().stream()
           .map(s -> Long.parseUnsignedLong(s, 16))
           .collect(toCollection(HashSet::new));
-  private static final boolean useExperimentalMutator = Opt.experimentalMutator.get();
+  private static final boolean useMutatorFramework;
   private static final boolean optimizeMergeInner = Opt.mergeInner.get();
   private static final boolean useHooks = Opt.hooks.get();
   private static final boolean emitDedupToken = Opt.dedup.get();
   private static final long keepGoing = Opt.keepGoing.get();
   private static final boolean limitedInput = Opt.limitedInput.get();
   private static final boolean ignoreInputEnd = Opt.ignoreInputEnd.get();
-  private static final long crossOverFrequency = Opt.experimentalCrossOverFrequency.get();
+  private static final long crossOverFrequency = Opt.mutatorCrossOverFrequency.get();
   private static final FuzzedDataProviderImpl fuzzedDataProvider =
       FuzzedDataProviderImpl.withNativeData();
   private static final LimitedFuzzedDataProvider limitedFuzzedDataProvider =
@@ -139,6 +134,12 @@ public final class FuzzTargetRunner {
     } catch (IllegalAccessException e) {
       throw new IllegalStateException(e);
     }
+
+    useMutatorFramework =
+        Opt.mutatorFramework.get()
+            && Opt.autofuzz.get().isEmpty()
+            && !(fuzzTarget.usesPrimitiveByteArray() || fuzzTarget.usesFuzzedDataProvider());
+
     useFuzzedDataProvider = fuzzTarget.usesFuzzedDataProvider();
     if (!useFuzzedDataProvider && IS_ANDROID) {
       Log.error("Android fuzz targets must use " + FuzzedDataProvider.class.getName());
@@ -157,9 +158,9 @@ public final class FuzzTargetRunner {
       exit(1);
     }
 
-    if (useExperimentalMutator) {
+    if (useMutatorFramework) {
       mutator = ArgumentsMutator.forMethodOrThrow(fuzzTarget.method);
-      Log.info("Using experimental mutator: " + mutator);
+      Log.info("Using mutator: " + mutator);
     } else {
       mutator = null;
     }
@@ -198,7 +199,7 @@ public final class FuzzTargetRunner {
     Throwable finding = null;
     byte[] data;
     Object argument;
-    if (useExperimentalMutator) {
+    if (useMutatorFramework) {
       // TODO: Instead of copying the native data and then reading it in, consider the following
       //  optimizations if they turn out to be worthwhile in benchmarks:
       //  1. Let libFuzzer pass in a null pointer if the byte array hasn't changed since the last
@@ -226,7 +227,7 @@ public final class FuzzTargetRunner {
     if (finding == null) {
       try {
         Object fuzzTargetInstance = lifecycleMethodsInvoker.getTestClassInstance();
-        if (useExperimentalMutator) {
+        if (useMutatorFramework) {
           // No need to detach as we are currently reading in the mutator state from bytes in every
           // iteration.
           mutator.invoke(fuzzTargetInstance, false);
@@ -238,6 +239,9 @@ public final class FuzzTargetRunner {
       } catch (Throwable uncaughtFinding) {
         finding = uncaughtFinding;
       } finally {
+        if (useMutatorFramework) {
+          mutator.finishFuzzingIteration();
+        }
         try {
           lifecycleMethodsInvoker.afterEachExecution();
         } catch (Throwable t) {
@@ -291,7 +295,8 @@ public final class FuzzTargetRunner {
       return LIBFUZZER_CONTINUE;
     }
     boolean continueFuzzing =
-        emitDedupToken && Long.compareUnsigned(ignoredTokens.size(), keepGoing) < 0;
+        emitDedupToken
+            && (keepGoing == 0 || Long.compareUnsigned(ignoredTokens.size(), keepGoing) < 0);
     boolean isFuzzingFromCommandLine =
         fatalFindingHandlerForJUnit == null || Opt.isJUnitAndCommandLine.get();
     // In case of --keep_going, only the last finding is reported to JUnit as a Java object, all
@@ -320,9 +325,9 @@ public final class FuzzTargetRunner {
     // target.
     // It doesn't support @FuzzTest fuzz targets, but these come with an integrated regression test
     // that satisfies the same purpose.
-    // It also doesn't support the experimental mutator yet as that requires implementing Java code
+    // It also doesn't support the mutator framework yet as that requires implementing Java code
     // generation for mutators.
-    if (fatalFindingHandlerForJUnit == null && !useExperimentalMutator) {
+    if (fatalFindingHandlerForJUnit == null && !useMutatorFramework) {
       dumpReproducer(data);
     }
 
@@ -414,7 +419,7 @@ public final class FuzzTargetRunner {
    * Starts libFuzzer via LLVMFuzzerRunDriver.
    */
   public static int startLibFuzzer(List<String> args) {
-    // We always define LLVMFuzzerCustomMutator, but only use it when --experimental_mutator is
+    // We always define LLVMFuzzerCustomMutator, but only use it when --mutator_framework is
     // specified. libFuzzer contains logic that disables --len_control when it finds the custom
     // mutator symbol:
     // https://github.com/llvm/llvm-project/blob/da3623de2411dd931913eb510e94fe846c929c24/compiler-rt/lib/fuzzer/FuzzerDriver.cpp#L202-L207
@@ -422,7 +427,7 @@ public final class FuzzTargetRunner {
     // mutator.
     // TODO: libFuzzer still emits a message about --len_control being disabled by default even if
     //  we override it via a flag. We may want to patch this out.
-    if (!useExperimentalMutator) {
+    if (!useMutatorFramework) {
       // args may not be mutable.
       args = new ArrayList<>(args);
       // https://github.com/llvm/llvm-project/blob/da3623de2411dd931913eb510e94fe846c929c24/compiler-rt/lib/fuzzer/FuzzerFlags.def#L19
@@ -549,7 +554,7 @@ public final class FuzzTargetRunner {
    */
   private static int startLibFuzzer(byte[][] args) {
     return FuzzTargetRunnerNatives.startLibFuzzer(
-        args, FuzzTargetRunner.class, useExperimentalMutator);
+        args, FuzzTargetRunner.class, useMutatorFramework);
   }
 
   /**

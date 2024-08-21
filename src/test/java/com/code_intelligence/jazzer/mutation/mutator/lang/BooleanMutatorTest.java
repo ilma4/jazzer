@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.lang;
@@ -21,15 +14,30 @@ import static com.google.common.truth.Truth.assertThat;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
+import com.code_intelligence.jazzer.mutation.support.TestSupport.ParameterHolder;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @SuppressWarnings("unchecked")
 class BooleanMutatorTest {
+  ChainedMutatorFactory factory;
+
+  @BeforeEach
+  void createFactory() {
+    factory = ChainedMutatorFactory.of(LangMutators.newFactories());
+  }
+
   @Test
   void testPrimitive() {
-    SerializingMutator<Boolean> mutator = LangMutators.newFactory().createOrThrow(boolean.class);
+    SerializingMutator<Boolean> mutator =
+        (SerializingMutator<Boolean>)
+            factory.createOrThrow(
+                new ParameterHolder() {
+                  void singleParam(boolean parameter) {}
+                }.annotatedType());
     assertThat(mutator.toString()).isEqualTo("Boolean");
 
     boolean bool;
@@ -48,8 +56,7 @@ class BooleanMutatorTest {
   void testBoxed() {
     SerializingMutator<Boolean> mutator =
         (SerializingMutator<Boolean>)
-            LangMutators.newFactory()
-                .createOrThrow(new TypeHolder<@NotNull Boolean>() {}.annotatedType());
+            factory.createOrThrow(new TypeHolder<@NotNull Boolean>() {}.annotatedType());
     assertThat(mutator.toString()).isEqualTo("Boolean");
 
     Boolean bool;
@@ -66,7 +73,12 @@ class BooleanMutatorTest {
 
   @Test
   void testCrossOver() {
-    SerializingMutator<Boolean> mutator = LangMutators.newFactory().createOrThrow(boolean.class);
+    SerializingMutator<Boolean> mutator =
+        (SerializingMutator<Boolean>)
+            factory.createOrThrow(
+                new ParameterHolder() {
+                  void singleParam(boolean parameter) {}
+                }.annotatedType());
     try (MockPseudoRandom prng = mockPseudoRandom(true, false)) {
       assertThat(mutator.crossOver(true, false, prng)).isTrue();
       assertThat(mutator.crossOver(true, false, prng)).isFalse();

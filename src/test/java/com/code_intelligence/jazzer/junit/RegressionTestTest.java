@@ -1,20 +1,15 @@
-// Copyright 2022 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 
 package com.code_intelligence.jazzer.junit;
 
-import static com.google.common.truth.Truth8.assertThat;
+import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assume.assumeTrue;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectPackage;
 import static org.junit.platform.testkit.engine.EventConditions.container;
@@ -29,6 +24,7 @@ import static org.junit.platform.testkit.engine.EventType.DYNAMIC_TEST_REGISTERE
 import static org.junit.platform.testkit.engine.EventType.FINISHED;
 import static org.junit.platform.testkit.engine.EventType.REPORTING_ENTRY_PUBLISHED;
 import static org.junit.platform.testkit.engine.EventType.STARTED;
+import static org.junit.platform.testkit.engine.TestExecutionResultConditions.cause;
 import static org.junit.platform.testkit.engine.TestExecutionResultConditions.instanceOf;
 import static org.junit.platform.testkit.engine.TestExecutionResultConditions.message;
 
@@ -40,6 +36,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 import org.junit.Test;
 import org.junit.platform.testkit.engine.EngineExecutionResults;
 import org.junit.platform.testkit.engine.EngineTestKit;
@@ -50,19 +48,15 @@ public class RegressionTestTest {
   private static final String BYTE_FUZZ_TEST = "class:com.example.ByteFuzzTest";
   private static final String VALID_FUZZ_TESTS = "class:com.example.ValidFuzzTests";
   private static final String INVALID_FUZZ_TESTS = "class:com.example.InvalidFuzzTests";
-  private static final String AUTOFUZZ_WITH_CORPUS_FUZZ_TEST =
-      "class:com.example.AutofuzzWithCorpusFuzzTest";
   private static final String BYTE_FUZZ = "test-template:byteFuzz([B)";
   private static final String NO_CRASH_FUZZ = "test-template:noCrashFuzz([B)";
   private static final String DATA_FUZZ =
       "test-template:dataFuzz(com.code_intelligence.jazzer.api.FuzzedDataProvider)";
   private static final String INVALID_PARAMETER_COUNT_FUZZ =
       "test-template:invalidParameterCountFuzz()";
-  private static final String PARAMETER_RESOLVER_FUZZ =
-      "test-template:parameterResolverFuzz(com.code_intelligence.jazzer.api.FuzzedDataProvider,"
+  private static final String INVALID_PARAMETER_RESOLVER_FUZZ =
+      "test-template:invalidParameterResolverFuzz(com.code_intelligence.jazzer.api.FuzzedDataProvider,"
           + " org.junit.jupiter.api.TestInfo)";
-  private static final String AUTOFUZZ_WITH_CORPUS =
-      "test-template:autofuzzWithCorpus(java.lang.String, int)";
   private static final String INVOCATION = "test-template-invocation:#";
 
   private static EngineExecutionResults executeTests() {
@@ -70,6 +64,7 @@ public class RegressionTestTest {
         .selectors(selectPackage("com.example"))
         .configurationParameter(
             "jazzer.instrument", "com.other.package.**,com.example.**,com.yet.another.package.*")
+        .configurationParameter("jazzer.mutator_framework", "false")
         .execute();
   }
 
@@ -91,10 +86,16 @@ public class RegressionTestTest {
     for (String line : stderrLines) {
       System.err.println(line);
     }
-    assertThat(
-            Arrays.stream(stderrLines)
-                .filter(line -> line.startsWith("WARN:") || line.startsWith("ERROR:")))
-        .isEmpty();
+    List<String> warningsAndErrors =
+        Arrays.stream(stderrLines)
+            .filter(line -> line.startsWith("WARN:") || line.startsWith("ERROR:"))
+            .collect(Collectors.toList());
+    assertThat(warningsAndErrors).hasSize(2);
+    assertThat(warningsAndErrors.get(0))
+        .contains(
+            "ERROR: Could not find suitable mutator for type: org.junit.jupiter.api.TestInfo");
+    assertThat(warningsAndErrors.get(1))
+        .contains("ERROR: Unsupported fuzz test parameter type org.junit.jupiter.api.TestInfo");
 
     results
         .containerEvents()
@@ -124,29 +125,6 @@ public class RegressionTestTest {
                 type(FINISHED),
                 container(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS)),
                 finishedSuccessfully()),
-            event(
-                type(STARTED),
-                container(uniqueIdSubstrings(ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST))),
-            event(
-                type(STARTED),
-                container(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS))),
-            event(
-                type(REPORTING_ENTRY_PUBLISHED),
-                container(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS))),
-            event(
-                type(FINISHED),
-                container(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS)),
-                finishedSuccessfully()),
-            event(
-                type(FINISHED),
-                container(uniqueIdSubstrings(ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST)),
-                finishedSuccessfully()),
             event(type(STARTED), container(uniqueIdSubstrings(ENGINE, BYTE_FUZZ_TEST))),
             event(type(STARTED), container(uniqueIdSubstrings(ENGINE, BYTE_FUZZ_TEST, BYTE_FUZZ))),
             event(
@@ -170,8 +148,16 @@ public class RegressionTestTest {
                     message("Methods annotated with @FuzzTest must take at least one parameter"))),
             event(
                 type(FINISHED),
-                container(uniqueIdSubstrings(ENGINE, INVALID_FUZZ_TESTS, PARAMETER_RESOLVER_FUZZ)),
-                finishedSuccessfully()),
+                container(
+                    uniqueIdSubstrings(
+                        ENGINE, INVALID_FUZZ_TESTS, INVALID_PARAMETER_RESOLVER_FUZZ)),
+                finishedWithFailure(
+                    instanceOf(FuzzTestConfigurationError.class),
+                    message(
+                        message ->
+                            message.contains(
+                                "Failed to construct mutator for"
+                                    + " com.example.InvalidFuzzTests.invalidParameterResolverFuzz")))),
             event(
                 type(FINISHED),
                 container(uniqueIdSubstrings(ENGINE, INVALID_FUZZ_TESTS)),
@@ -182,13 +168,6 @@ public class RegressionTestTest {
         .testEvents()
         .debug()
         .assertEventsMatchLoosely(
-            event(
-                type(FINISHED),
-                test(
-                    uniqueIdSubstrings(
-                        ENGINE, INVALID_FUZZ_TESTS, PARAMETER_RESOLVER_FUZZ, INVOCATION)),
-                displayName("<empty input>"),
-                finishedWithFailure(instanceOf(FuzzTestConfigurationError.class))),
             event(
                 type(DYNAMIC_TEST_REGISTERED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
@@ -201,7 +180,9 @@ public class RegressionTestTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
                 displayName("<empty input>"),
-                finishedWithFailure(instanceOf(FuzzerSecurityIssueMedium.class))),
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(FuzzerSecurityIssueMedium.class)))),
             event(
                 type(DYNAMIC_TEST_REGISTERED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
@@ -227,7 +208,9 @@ public class RegressionTestTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
                 displayName("assert"),
-                finishedWithFailure(instanceOf(AssertionFailedError.class))),
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(AssertionFailedError.class)))),
             event(
                 type(DYNAMIC_TEST_REGISTERED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
@@ -240,7 +223,9 @@ public class RegressionTestTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
                 displayName("honeypot"),
-                finishedWithFailure(instanceOf(FuzzerSecurityIssueHigh.class))),
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(FuzzerSecurityIssueHigh.class)))),
             event(
                 type(DYNAMIC_TEST_REGISTERED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
@@ -253,7 +238,9 @@ public class RegressionTestTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
                 displayName("sanitizer_internal_class"),
-                finishedWithFailure(instanceOf(FuzzerSecurityIssueCritical.class))),
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(FuzzerSecurityIssueCritical.class)))),
             event(
                 type(DYNAMIC_TEST_REGISTERED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
@@ -266,7 +253,9 @@ public class RegressionTestTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, VALID_FUZZ_TESTS, DATA_FUZZ, INVOCATION)),
                 displayName("sanitizer_user_class"),
-                finishedWithFailure(instanceOf(FuzzerSecurityIssueLow.class))),
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(FuzzerSecurityIssueLow.class)))),
             event(
                 type(DYNAMIC_TEST_REGISTERED),
                 test(uniqueIdSubstrings(ENGINE, BYTE_FUZZ_TEST, BYTE_FUZZ, INVOCATION)),
@@ -305,44 +294,8 @@ public class RegressionTestTest {
                 type(FINISHED),
                 test(uniqueIdSubstrings(ENGINE, BYTE_FUZZ_TEST, BYTE_FUZZ, INVOCATION)),
                 displayName("fails"),
-                finishedWithFailure(instanceOf(AssertionFailedError.class))),
-            event(
-                type(DYNAMIC_TEST_REGISTERED),
-                test(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS, INVOCATION)),
-                displayName("<empty input>")),
-            event(
-                type(STARTED),
-                test(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS, INVOCATION)),
-                displayName("<empty input>")),
-            event(
-                type(FINISHED),
-                test(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS, INVOCATION)),
-                displayName("<empty input>"),
-                finishedSuccessfully()),
-            event(
-                type(DYNAMIC_TEST_REGISTERED),
-                test(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS, INVOCATION)),
-                displayName("crashing_input")),
-            event(
-                type(STARTED),
-                test(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS, INVOCATION)),
-                displayName("crashing_input")),
-            event(
-                type(FINISHED),
-                test(
-                    uniqueIdSubstrings(
-                        ENGINE, AUTOFUZZ_WITH_CORPUS_FUZZ_TEST, AUTOFUZZ_WITH_CORPUS, INVOCATION)),
-                displayName("crashing_input"),
-                finishedWithFailure(instanceOf(RuntimeException.class))));
+                finishedWithFailure(
+                    instanceOf(FuzzTestFindingException.class),
+                    cause(instanceOf(AssertionFailedError.class)))));
   }
 }

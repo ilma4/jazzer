@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.proto;
@@ -30,12 +23,11 @@ import static com.code_intelligence.jazzer.mutation.mutator.proto.BuilderAdapter
 import static com.code_intelligence.jazzer.mutation.mutator.proto.BuilderAdapters.setFieldWithPresence;
 import static com.code_intelligence.jazzer.mutation.mutator.proto.BuilderAdapters.setMapField;
 import static com.code_intelligence.jazzer.mutation.mutator.proto.TypeLibrary.getDefaultInstance;
-import static com.code_intelligence.jazzer.mutation.mutator.proto.TypeLibrary.isRecursiveField;
+import static com.code_intelligence.jazzer.mutation.mutator.proto.TypeLibrary.getMessageType;
 import static com.code_intelligence.jazzer.mutation.mutator.proto.TypeLibrary.withoutInitIfRecursive;
 import static com.code_intelligence.jazzer.mutation.support.InputStreamSupport.cap;
-import static com.code_intelligence.jazzer.mutation.support.TypeSupport.asAnnotatedType;
+import static com.code_intelligence.jazzer.mutation.support.PropertyConstraintSupport.propagatePropertyConstraints;
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.asSubclassOrEmpty;
-import static com.code_intelligence.jazzer.mutation.support.TypeSupport.findFirstParentIfClass;
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.notNull;
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.withExtraAnnotations;
 import static java.util.Arrays.stream;
@@ -47,12 +39,13 @@ import static java.util.stream.Collectors.toMap;
 
 import com.code_intelligence.jazzer.mutation.annotation.proto.AnySource;
 import com.code_intelligence.jazzer.mutation.annotation.proto.WithDefaultInstance;
-import com.code_intelligence.jazzer.mutation.api.ChainedMutatorFactory;
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.InPlaceMutator;
 import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.Serializer;
 import com.code_intelligence.jazzer.mutation.api.SerializingInPlaceMutator;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.support.Preconditions;
 import com.google.protobuf.Any;
 import com.google.protobuf.Descriptors.Descriptor;
@@ -65,7 +58,6 @@ import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.Message.Builder;
-import com.google.protobuf.MessageOrBuilder;
 import com.google.protobuf.UnknownFieldSet;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -84,12 +76,18 @@ import java.util.Optional;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-public final class BuilderMutatorFactory extends MutatorFactory {
+public final class BuilderMutatorFactory implements MutatorFactory {
   private <T extends Builder, U> InPlaceMutator<T> mutatorForField(
-      FieldDescriptor field, Annotation[] annotations, MutatorFactory factory) {
+      AnnotatedType initialType,
+      FieldDescriptor field,
+      Annotation[] annotations,
+      ExtendedMutatorFactory factory) {
     factory = withDescriptorDependentMutatorFactoryIfNeeded(factory, field, annotations);
     AnnotatedType typeToMutate = TypeLibrary.getTypeToMutate(field);
     requireNonNull(typeToMutate, () -> "Java class not specified for " + field);
+
+    // Propagate constraints from the field to the type to mutate.
+    typeToMutate = propagatePropertyConstraints(initialType, typeToMutate);
 
     InPlaceMutator<T> mutator;
     if (field.isMapField()) {
@@ -130,42 +128,36 @@ public final class BuilderMutatorFactory extends MutatorFactory {
     return withoutInitIfRecursive(mutator, field);
   }
 
-  private MutatorFactory withDescriptorDependentMutatorFactoryIfNeeded(
-      MutatorFactory originalFactory, FieldDescriptor field, Annotation[] annotations) {
+  private ExtendedMutatorFactory withDescriptorDependentMutatorFactoryIfNeeded(
+      ExtendedMutatorFactory originalFactory, FieldDescriptor field, Annotation[] annotations) {
     if (field.getJavaType() == JavaType.ENUM) {
       // Proto enum fields are special as their type (EnumValueDescriptor) does not encode their
       // domain - we need the actual EnumDescriptor instance.
-      return new ChainedMutatorFactory(
-          originalFactory,
-          new MutatorFactory() {
-            @Override
-            public Optional<SerializingMutator<?>> tryCreate(
-                AnnotatedType type, MutatorFactory factory) {
-              return findFirstParentIfClass(type, EnumValueDescriptor.class)
-                  .map(
-                      parent -> {
-                        EnumDescriptor enumType = field.getEnumType();
-                        List<EnumValueDescriptor> values = enumType.getValues();
-                        String name = enumType.getName();
-                        if (values.size() == 1) {
-                          // While we generally prefer to error out instead of creating a mutator
-                          // that can't
-                          // actually mutate its domain, we can't do that for proto enum fields as
-                          // the user
-                          // creating the fuzz test may not be in a position to modify the existing
-                          // proto
-                          // definition.
-                          return fixedValue(values.get(0));
-                        } else {
-                          return mutateThenMapToImmutable(
-                              mutateIndices(values.size()),
-                              values::get,
-                              EnumValueDescriptor::getIndex,
-                              unused -> "Enum<" + name + ">");
-                        }
-                      });
-            }
-          });
+      return ChainedMutatorFactory.of(
+          originalFactory.getCache(),
+          Stream.of(
+              originalFactory,
+              (type, factory) ->
+                  asSubclassOrEmpty(type, EnumValueDescriptor.class)
+                      .map(
+                          unused -> {
+                            EnumDescriptor enumType = field.getEnumType();
+                            List<EnumValueDescriptor> values = enumType.getValues();
+                            String name = enumType.getName();
+                            if (values.size() == 1) {
+                              // While we generally prefer to error out instead of creating a
+                              // mutator that can't actually mutate its domain, we can't do that for
+                              // proto enum fields as the user creating the fuzz test may not be in
+                              // a position to modify the existing proto definition.
+                              return fixedValue(values.get(0));
+                            } else {
+                              return mutateThenMapToImmutable(
+                                  mutateIndices(values.size()),
+                                  values::get,
+                                  EnumValueDescriptor::getIndex,
+                                  unused2 -> "Enum<" + name + ">");
+                            }
+                          })));
     } else if (field.getJavaType() == JavaType.MESSAGE) {
       Descriptor messageDescriptor;
       if (field.isMapField()) {
@@ -179,44 +171,45 @@ public final class BuilderMutatorFactory extends MutatorFactory {
       } else {
         messageDescriptor = field.getMessageType();
       }
-      return new ChainedMutatorFactory(
-          originalFactory,
-          new MutatorFactory() {
-            @Override
-            public Optional<SerializingMutator<?>> tryCreate(
-                AnnotatedType type, MutatorFactory factory) {
-              return asSubclassOrEmpty(type, Message.Builder.class)
-                  .flatMap(
-                      clazz -> {
-                        // BuilderMutatorFactory only handles subclasses of Message.Builder and
-                        // requests
-                        // Message.Builder itself for message fields, which we handle here.
-                        if (clazz != Message.Builder.class) {
-                          return Optional.empty();
-                        }
-                        // It is important that we use originalFactory here instead of factory:
-                        // factory has this
-                        // field-specific message mutator appended, but this mutator should only be
-                        // used for
-                        // this particular field and not any message subfields.
-                        return Optional.of(
-                            makeBuilderMutator(
-                                originalFactory,
-                                DynamicMessage.getDefaultInstance(messageDescriptor),
-                                annotations));
-                      });
-            }
-          });
+      return ChainedMutatorFactory.of(
+          originalFactory.getCache(),
+          Stream.of(
+              originalFactory,
+              (type, factory) ->
+                  asSubclassOrEmpty(type, Message.Builder.class)
+                      .flatMap(
+                          clazz -> {
+                            // BuilderMutatorFactory only handles concrete subclasses of
+                            // Message.Builder
+                            // and requests Message.Builder itself for message fields, which we
+                            // handle
+                            // here.
+                            if (clazz != Message.Builder.class) {
+                              return Optional.empty();
+                            }
+                            // It is important that we use originalFactory here instead of factory:
+                            // factory has this field-specific message mutator appended, but this
+                            // mutator should only be used for this particular field and not any
+                            // message
+                            // subfields.
+                            return Optional.of(
+                                makeBuilderMutator(
+                                    type,
+                                    originalFactory,
+                                    DynamicMessage.getDefaultInstance(messageDescriptor),
+                                    annotations));
+                          })));
     } else {
       return originalFactory;
     }
   }
 
   private <T extends Builder> Stream<InPlaceMutator<T>> mutatorsForFields(
+      AnnotatedType initialType,
       Optional<OneofDescriptor> oneofField,
       List<FieldDescriptor> fields,
       Annotation[] annotations,
-      MutatorFactory factory) {
+      ExtendedMutatorFactory factory) {
     if (oneofField.isPresent()) {
       // oneof fields are mutated as one as mutating them independently would cause the mutator to
       // erratically switch between the different states. The individual fields are kept in the
@@ -242,12 +235,13 @@ public final class BuilderMutatorFactory extends MutatorFactory {
               // Mutating to the unset (-1) state is handled by the individual field mutators, which
               // are created nullable as oneof fields report that they track presence.
               fields.stream()
-                  .map(field -> mutatorForField(field, annotations, factory))
+                  .map(field -> mutatorForField(initialType, field, annotations, factory))
                   .toArray(InPlaceMutator[]::new)));
     } else {
       // All non-oneof fields are mutated independently, using the order in which they are declared
       // in the .proto file (which may not coincide with the order by field number).
-      return fields.stream().map(field -> mutatorForField(field, annotations, factory));
+      return fields.stream()
+          .map(field -> mutatorForField(initialType, field, annotations, factory));
     }
   }
 
@@ -330,17 +324,12 @@ public final class BuilderMutatorFactory extends MutatorFactory {
       new HashMap<>();
 
   private SerializingMutator<Any.Builder> mutatorForAny(
-      AnySource anySource, MutatorFactory factory) {
+      AnySource anySource, ExtendedMutatorFactory factory) {
     Map<String, Integer> typeUrlToIndex =
         IntStream.range(0, anySource.value().length)
             .boxed()
             .collect(toMap(i -> getTypeUrl(getDefaultInstance(anySource.value()[i])), identity()));
 
-    boolean hasFixedSize =
-        stream(anySource.value())
-            .map(TypeLibrary::getDefaultInstance)
-            .map(MessageOrBuilder::getDescriptorForType)
-            .allMatch(BuilderMutatorFactory::hasFixedSize);
     return assemble(
         mutator -> internedMutators.put(new CacheKey(Any.getDescriptor(), anySource), mutator),
         Any.getDefaultInstance()::toBuilder,
@@ -358,7 +347,7 @@ public final class BuilderMutatorFactory extends MutatorFactory {
                                   factory.createOrThrow(
                                       notNull(
                                           withExtraAnnotations(
-                                              asAnnotatedType(messageClass), anySource)));
+                                              getMessageType(messageClass), anySource)));
                           return mutateProperty(
                               (Any.Builder anyBuilder) -> {
                                 try {
@@ -374,8 +363,7 @@ public final class BuilderMutatorFactory extends MutatorFactory {
                                 any.setValue(message.toByteString());
                               });
                         })
-                    .toArray(InPlaceMutator[]::new)),
-        hasFixedSize);
+                    .toArray(InPlaceMutator[]::new)));
   }
 
   private static String getTypeUrl(Message message) {
@@ -385,8 +373,9 @@ public final class BuilderMutatorFactory extends MutatorFactory {
   }
 
   @Override
-  public Optional<SerializingMutator<?>> tryCreate(AnnotatedType type, MutatorFactory factory) {
-    return asSubclassOrEmpty(type, Builder.class)
+  public Optional<SerializingMutator<?>> tryCreate(
+      AnnotatedType type, ExtendedMutatorFactory factory) {
+    return asSubclassOrEmpty(type, Message.Builder.class)
         .flatMap(
             builderClass -> {
               Message defaultInstance;
@@ -403,8 +392,7 @@ public final class BuilderMutatorFactory extends MutatorFactory {
                 // Handled by a custom mutator factory for message fields that is created in
                 // withDescriptorDependentMutatorFactoryIfNeeded. Without @WithDefaultInstance,
                 // BuilderMutatorFactory only handles proper subclasses, which correspond to
-                // generated
-                // message types.
+                // generated message types.
                 return Optional.empty();
               } else {
                 defaultInstance =
@@ -412,12 +400,16 @@ public final class BuilderMutatorFactory extends MutatorFactory {
               }
 
               return Optional.of(
-                  makeBuilderMutator(factory, defaultInstance, type.getDeclaredAnnotations()));
+                  makeBuilderMutator(
+                      type, factory, defaultInstance, type.getDeclaredAnnotations()));
             });
   }
 
   private SerializingMutator<?> makeBuilderMutator(
-      MutatorFactory factory, Message defaultInstance, Annotation[] annotations) {
+      AnnotatedType initialType,
+      ExtendedMutatorFactory factory,
+      Message defaultInstance,
+      Annotation[] annotations) {
     AnySource anySource =
         (AnySource)
             stream(annotations)
@@ -468,27 +460,14 @@ public final class BuilderMutatorFactory extends MutatorFactory {
                     .flatMap(
                         entry ->
                             mutatorsForFields(
+                                initialType,
                                 entry.getKey(),
                                 entry.getValue(),
                                 anySource == null
                                     ? new Annotation[0]
                                     : new Annotation[] {anySource},
                                 factory))
-                    .toArray(InPlaceMutator[]::new)),
-        hasFixedSize(descriptor));
-  }
-
-  private static boolean hasFixedSize(Descriptor descriptor) {
-    return descriptor.getFields().stream()
-        .noneMatch(
-            field ->
-                field.isMapField()
-                    || field.isRepeated()
-                    || isRecursiveField(field)
-                    || field.getJavaType() == JavaType.STRING
-                    || field.getJavaType() == JavaType.BYTE_STRING
-                    || (field.getJavaType() == JavaType.MESSAGE
-                        && !hasFixedSize(field.getMessageType())));
+                    .toArray(InPlaceMutator[]::new)));
   }
 
   private static final class CacheKey {

@@ -1,52 +1,37 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.proto;
 
 import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.mutateThenMapToImmutable;
-import static com.code_intelligence.jazzer.mutation.support.TypeSupport.asAnnotatedType;
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.asSubclassOrEmpty;
 import static com.code_intelligence.jazzer.mutation.support.TypeSupport.withExtraAnnotations;
 
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.MutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
 import com.google.protobuf.Message;
 import com.google.protobuf.Message.Builder;
 import java.lang.reflect.AnnotatedType;
-import java.util.Arrays;
 import java.util.Optional;
 
-public final class MessageMutatorFactory extends MutatorFactory {
+public final class MessageMutatorFactory implements MutatorFactory {
   @Override
   public Optional<SerializingMutator<?>> tryCreate(
-      AnnotatedType messageType, MutatorFactory factory) {
+      AnnotatedType messageType, ExtendedMutatorFactory factory) {
     return asSubclassOrEmpty(messageType, Message.class)
-        // If the Message class doesn't have a nested Builder class, it is not a concrete generated
-        // message and we can't mutate it.
+        .flatMap(TypeLibrary::getBuilderType)
         .flatMap(
-            messageClass ->
-                Arrays.stream(messageClass.getDeclaredClasses())
-                    .filter(clazz -> clazz.getSimpleName().equals("Builder"))
-                    .findFirst())
-        .flatMap(
-            builderClass ->
+            builderType ->
                 // Forward the annotations (e.g. @NotNull) on the Message type to the Builder type.
                 factory.tryCreateInPlace(
-                    withExtraAnnotations(
-                        asAnnotatedType(builderClass), messageType.getAnnotations())))
+                    withExtraAnnotations(builderType, messageType.getAnnotations())))
         .map(
             builderMutator ->
                 mutateThenMapToImmutable(

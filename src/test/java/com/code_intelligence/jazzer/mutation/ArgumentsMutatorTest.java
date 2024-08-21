@@ -1,24 +1,16 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation;
 
 import static com.code_intelligence.jazzer.mutation.support.TestSupport.mockPseudoRandom;
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth8.assertThat;
 import static java.util.Collections.singletonList;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
@@ -302,5 +294,50 @@ class ArgumentsMutatorTest {
 
     assertThat(arguments).isNotEmpty();
     assertThat((List<Boolean>) arguments[0]).isNotEmpty();
+  }
+
+  public static class EmptyBeanWithRuntimeError {
+    static boolean throwInConstructor = false;
+
+    public EmptyBeanWithRuntimeError() {
+      if (throwInConstructor) throw new RuntimeException("Runtime error in constructor");
+    }
+
+    public static void throwErrorInConstructor(boolean val) {
+      throwInConstructor = val;
+    }
+  }
+
+  public void readEmptyBeanWithRuntimeError(@NotNull EmptyBeanWithRuntimeError data) {}
+
+  @Test
+  void testReadEmptyBeanWithRuntimeError() throws NoSuchMethodException {
+    Method method =
+        ArgumentsMutatorTest.class.getMethod(
+            "readEmptyBeanWithRuntimeError", EmptyBeanWithRuntimeError.class);
+    Optional<ArgumentsMutator> maybeMutator =
+        ArgumentsMutator.forMethod(Mutators.newFactory(), method);
+    assertThat(maybeMutator).isPresent();
+    ArgumentsMutator mutator = maybeMutator.get();
+
+    mutator.init(12345);
+    Object[] arguments = mutator.getArguments();
+    assertThat(arguments).isNotEmpty();
+    assertThat(arguments[0]).isInstanceOf(EmptyBeanWithRuntimeError.class);
+
+    // @NotNull EmptyBean should be read without error.
+    mutator.read(new ByteArrayInputStream(new byte[1]));
+    arguments = mutator.getArguments();
+    assertThat(arguments).isNotEmpty();
+    assertThat(arguments[0]).isInstanceOf(EmptyBeanWithRuntimeError.class);
+
+    // Error in constructor results in a finding---the user should fix the fuzz test or
+    // fuzz with JAZZER_KEEP_GOING.
+    EmptyBeanWithRuntimeError.throwErrorInConstructor(true);
+    try {
+      mutator.read(new ByteArrayInputStream(new byte[1]));
+    } catch (RuntimeException e) {
+      // expected
+    }
   }
 }

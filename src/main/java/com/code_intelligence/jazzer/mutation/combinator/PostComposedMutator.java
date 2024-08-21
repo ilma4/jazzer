@@ -1,17 +1,10 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.combinator;
@@ -26,17 +19,28 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import net.jodah.typetools.TypeResolver;
 
 abstract class PostComposedMutator<T, R> extends SerializingMutator<R> {
-  private final SerializingMutator<T> mutator;
+  protected final SerializingMutator<T> mutator;
   private final Function<T, R> map;
   private final Function<R, T> inverse;
 
   PostComposedMutator(SerializingMutator<T> mutator, Function<T, R> map, Function<R, T> inverse) {
-    this.mutator = requireNonNull(mutator);
+    this(() -> mutator, map, inverse, self -> {});
+  }
+
+  PostComposedMutator(
+      Supplier<SerializingMutator<T>> mutator,
+      Function<T, R> map,
+      Function<R, T> inverse,
+      Consumer<SerializingMutator<R>> registerSelf) {
+    registerSelf.accept(this);
+    this.mutator = requireNonNull(mutator).get();
     this.map = requireNonNull(map);
     this.inverse = requireNonNull(inverse);
   }
@@ -62,7 +66,7 @@ abstract class PostComposedMutator<T, R> extends SerializingMutator<R> {
   }
 
   @Override
-  public boolean hasFixedSize() {
+  protected boolean computeHasFixedSize() {
     return mutator.hasFixedSize();
   }
 

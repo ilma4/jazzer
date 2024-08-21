@@ -1,24 +1,17 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.combinator;
 
 import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.assemble;
 import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.combine;
-import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.mutateProduct;
+import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.mutateProductInPlace;
 import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.mutateProperty;
 import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.mutateSumInPlace;
 import static com.code_intelligence.jazzer.mutation.combinator.MutatorCombinators.mutateThenMapToImmutable;
@@ -323,8 +316,7 @@ class MutatorCombinatorsTest {
                 return null;
               }
             },
-            () -> combine(valueMutator, listMutator),
-            false);
+            () -> combine(valueMutator, listMutator));
 
     assertThat(mutator.toString()).isEqualTo("{Foo.Integer, Foo via List<Integer>}");
 
@@ -381,8 +373,7 @@ class MutatorCombinatorsTest {
                 return null;
               }
             },
-            () -> combine(valueMutator, listMutator),
-            false);
+            () -> combine(valueMutator, listMutator));
 
     Foo foo = new Foo(0, singletonList(0));
     Foo fooOther = new Foo(1, singletonList(1));
@@ -466,7 +457,7 @@ class MutatorCombinatorsTest {
   void testCrossOverProduct() {
     SerializingMutator<Boolean> mutator1 = mockCrossOver((a, b) -> true);
     SerializingMutator<Integer> mutator2 = mockCrossOver((a, b) -> 42);
-    ProductMutator mutator = mutateProduct(mutator1, mutator2);
+    InPlaceProductMutator mutator = mutateProductInPlace(mutator1, mutator2);
 
     try (MockPseudoRandom prng =
         mockPseudoRandom(

@@ -1,27 +1,23 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.support;
 
+import static com.code_intelligence.jazzer.mutation.support.Preconditions.require;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.requireNonNullElements;
 import static com.google.common.truth.Truth.assertThat;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.toCollection;
+import static java.util.stream.Collectors.toList;
 
 import com.code_intelligence.jazzer.mutation.api.Debuggable;
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.InPlaceMutator;
 import com.code_intelligence.jazzer.mutation.api.PseudoRandom;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
@@ -31,8 +27,13 @@ import com.google.errorprone.annotations.MustBeClosed;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.OutputStream;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedType;
+import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Queue;
@@ -250,6 +251,10 @@ public final class TestSupport {
       this.elements = stream(objects).collect(toCollection(ArrayDeque::new));
     }
 
+    public String toString() {
+      return "PRNG: " + Arrays.toString(elements.toArray());
+    }
+
     @Override
     public boolean choice() {
       assertThat(elements).isNotEmpty();
@@ -282,18 +287,12 @@ public final class TestSupport {
 
     @Override
     public <T> int indexIn(T[] array) {
-      assertThat(array).isNotEmpty();
-
-      assertThat(elements).isNotEmpty();
-      return (int) elements.poll();
+      return indexIn(array.length);
     }
 
     @Override
     public <T> int indexIn(List<T> list) {
-      assertThat(list).isNotEmpty();
-
-      assertThat(elements).isNotEmpty();
-      return (int) elements.poll();
+      return indexIn(list.size());
     }
 
     @Override
@@ -301,7 +300,10 @@ public final class TestSupport {
       assertThat(range).isAtLeast(1);
 
       assertThat(elements).isNotEmpty();
-      return (int) elements.poll();
+      int result = (int) elements.poll();
+      assertThat(result).isAtLeast(0);
+      assertThat(result).isLessThan(range);
+      return result;
     }
 
     @Override
@@ -422,5 +424,50 @@ public final class TestSupport {
   @SafeVarargs
   public static <T> ArrayList<T> asMutableList(T... objs) {
     return stream(objs).collect(toCollection(ArrayList::new));
+  }
+
+  /**
+   * A factory for {@link AnnotatedType} instances capturing method parameters.
+   *
+   * <p>Due to type erasure, this class can only be used by creating an anonymous subclass with a
+   * method called {@code singleParam} that takes exactly the desired parameter.
+   *
+   * <p>Example: {@code new ParameterHolder {void singleParam(@NotNull List<String> param)}
+   * .annotatedType}
+   */
+  public abstract static class ParameterHolder {
+    protected ParameterHolder() {}
+
+    public AnnotatedType annotatedType() {
+      return getMethod().getAnnotatedParameterTypes()[0];
+    }
+
+    public Type type() {
+      return annotatedType().getType();
+    }
+
+    public Annotation[] parameterAnnotations() {
+      return getMethod().getParameterAnnotations()[0];
+    }
+
+    private Method getMethod() {
+      List<Method> methods =
+          stream(this.getClass().getDeclaredMethods())
+              .filter(method -> method.getName().equals("singleParam"))
+              .collect(toList());
+      require(
+          methods.size() == 1,
+          this.getClass().getName() + " must define exactly one function named 'singleParam'");
+      Method foo = methods.get(0);
+      require(
+          foo.getParameterCount() == 1,
+          this.getClass().getName() + "#singleParam must define exactly one parameter");
+      return foo;
+    }
+  }
+
+  public static <T> SerializingMutator<T> createOrThrow(
+      ExtendedMutatorFactory factory, TypeHolder<T> typeHolder) {
+    return (SerializingMutator<T>) factory.createOrThrow(typeHolder.annotatedType());
   }
 }

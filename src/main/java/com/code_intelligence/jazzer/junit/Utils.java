@@ -1,16 +1,11 @@
-// Copyright 2022 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 
 package com.code_intelligence.jazzer.junit;
 
@@ -40,6 +35,7 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -222,16 +218,29 @@ class Utils {
   private static final Pattern COVERAGE_AGENT_ARG =
       Pattern.compile("-javaagent:.*(?:intellij-coverage-agent|jacoco).*");
 
-  static boolean isCoverageAgentPresent() {
+  private static boolean isCoverageAgentPresent() {
     return ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
         .anyMatch(s -> COVERAGE_AGENT_ARG.matcher(s).matches());
   }
 
+  static boolean isGatheringCoverage() {
+    return isCoverageAgentPresent() || permissivelyParseBoolean(System.getenv("JAZZER_COVERAGE"));
+  }
+
+  private static final boolean SET_FUZZING_ENV =
+      System.getenv("JAZZER_FUZZ") != null || System.getProperty("JAZZER_FUZZ") != null;
   private static final boolean IS_FUZZING_ENV =
-      System.getenv("JAZZER_FUZZ") != null && !System.getenv("JAZZER_FUZZ").isEmpty();
+      permissivelyParseBoolean(System.getenv("JAZZER_FUZZ"))
+          || permissivelyParseBoolean(System.getProperty("JAZZER_FUZZ"));
+
+  /** Returns true if and only if the value is equal to "true", "1", or "yes" case-insensitively. */
+  static boolean permissivelyParseBoolean(String value) {
+    return value != null
+        && (value.equalsIgnoreCase("true") || value.equals("1") || value.equalsIgnoreCase("yes"));
+  }
 
   static boolean isFuzzing(ExtensionContext extensionContext) {
-    return IS_FUZZING_ENV || runFromCommandLine(extensionContext);
+    return SET_FUZZING_ENV ? IS_FUZZING_ENV : runFromCommandLine(extensionContext);
   }
 
   static boolean runFromCommandLine(ExtensionContext extensionContext) {
@@ -241,9 +250,24 @@ class Utils {
         .orElse(false);
   }
 
-  /** Returns true if and only if the value is equal to "true", "1", or "yes" case-insensitively. */
-  static boolean permissivelyParseBoolean(String value) {
-    return value.equalsIgnoreCase("true") || value.equals("1") || value.equalsIgnoreCase("yes");
+  static List<String> getLibFuzzerArgs(ExtensionContext extensionContext) {
+    List<String> args = new ArrayList<>();
+    for (int i = 0; ; i++) {
+      Optional<String> arg = extensionContext.getConfigurationParameter("jazzer.internal.arg." + i);
+      if (!arg.isPresent()) {
+        break;
+      }
+      args.add(arg.get());
+    }
+    return args;
+  }
+
+  static List<String> getCorpusFilesOrDirs(ExtensionContext context) {
+    return getLibFuzzerArgs(context).stream()
+        // Skip first parameter (executable name)
+        .skip(1)
+        .filter(arg -> !arg.startsWith("-"))
+        .collect(toList());
   }
 
   /**

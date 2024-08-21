@@ -1,16 +1,11 @@
-// Copyright 2021 Code Intelligence GmbH
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2024 Code Intelligence GmbH
+ *
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+ *
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
+ */
 package com.code_intelligence.jazzer.tools;
 
 import static java.util.Arrays.asList;
@@ -70,7 +65,9 @@ public class FuzzTargetTestWrapper {
     boolean shouldVerifyCrashInput;
     boolean shouldVerifyCrashReproducer;
     boolean expectCrash;
+    int expectNonCrashExitCode;
     boolean usesJavaLauncher;
+    int expectedNumberOfFindings;
     Optional<String> expectedWarningOrError;
     Set<String> allowedFindings;
     List<String> arguments;
@@ -84,24 +81,27 @@ public class FuzzTargetTestWrapper {
       shouldVerifyCrashInput = Boolean.parseBoolean(args[4]);
       shouldVerifyCrashReproducer = Boolean.parseBoolean(args[5]);
       expectCrash = Boolean.parseBoolean(args[6]);
-      usesJavaLauncher = Boolean.parseBoolean(args[7]);
-      if (args[8].isEmpty()) {
-        expectedWarningOrError = Optional.empty();
-      } else {
-        expectedWarningOrError = Optional.of(args[8]);
-      }
+      expectNonCrashExitCode = Integer.parseInt(args[7]);
+      usesJavaLauncher = Boolean.parseBoolean(args[8]);
+      expectedNumberOfFindings = Integer.parseInt(args[9]);
+      expectedWarningOrError = args[10].isEmpty() ? Optional.empty() : Optional.of(args[10]);
       allowedFindings =
-          Arrays.stream(args[9].split(",")).filter(s -> !s.isEmpty()).collect(toSet());
+          Arrays.stream(args[11].split(",")).filter(s -> !s.isEmpty()).collect(toSet());
       // Map all files/dirs to real location
       arguments =
           Arrays.stream(args)
-              .skip(10)
+              .skip(12)
               .map(arg -> arg.startsWith("-") ? arg : runfiles.rlocation(arg))
               .collect(toList());
     } catch (IOException | ArrayIndexOutOfBoundsException e) {
       e.printStackTrace();
       System.exit(1);
       return;
+    }
+
+    if (expectedNumberOfFindings > 1
+        && (allowedFindings.contains("timeout") || allowedFindings.contains("native"))) {
+      throw new IllegalArgumentException("Cannot expect multiple native or timeout findings");
     }
 
     ProcessBuilder processBuilder = new ProcessBuilder();
@@ -131,7 +131,7 @@ public class FuzzTargetTestWrapper {
                   "-XX:+IgnoreUnrecognizedVMOptions",
                   "-XX:+CriticalJNINatives",
                   "-XX:+EnableDynamicAgentLoading"));
-      if (System.getenv("JAZZER_DEBUG") != null) {
+      if (System.getenv("JAZZER_DEBUG") != null && System.getenv("JAZZER_DEBUG").equals("1")) {
         command.add("--debug");
       }
     } else {
@@ -169,13 +169,21 @@ public class FuzzTargetTestWrapper {
                 process.getErrorStream(),
                 allowedFindings,
                 arguments.contains("--nohooks"),
-                expectedWarningOrError);
+                expectedWarningOrError,
+                expectedNumberOfFindings);
       } finally {
         process.getErrorStream().close();
       }
       int exitCode = process.waitFor();
       if (!expectCrash) {
-        if (exitCode != 0) {
+        if (expectNonCrashExitCode >= 0) {
+          if (expectNonCrashExitCode != exitCode) {
+            System.err.printf(
+                "Expected exit code %d, but Jazzer exited with exit code %d%n",
+                expectNonCrashExitCode, exitCode);
+            System.exit(1);
+          }
+        } else if (exitCode != 0) {
           System.err.printf(
               "Did not expect a crash, but Jazzer exited with exit code %d%n", exitCode);
           System.exit(1);
@@ -230,7 +238,8 @@ public class FuzzTargetTestWrapper {
       InputStream fuzzerOutput,
       Set<String> expectedFindings,
       boolean noHooks,
-      Optional<String> expectedWarningOrError)
+      Optional<String> expectedWarningOrError,
+      int expectedNumberOfFindings)
       throws IOException {
     List<String> lines;
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(fuzzerOutput))) {
@@ -254,7 +263,7 @@ public class FuzzTargetTestWrapper {
       }
       String unexpectedWarningsAndErrors =
           warningsAndErrors.stream()
-              .filter(line -> !expectedWarningOrError.get().equals(line))
+              .filter(line -> !line.matches(expectedWarningOrError.get() + ".*$"))
               .collect(Collectors.joining("\n"));
       if (!unexpectedWarningsAndErrors.isEmpty()) {
         throw new IllegalStateException(
@@ -314,6 +323,12 @@ public class FuzzTargetTestWrapper {
             .collect(toList());
     if (findings.isEmpty()) {
       throw new IllegalStateException("Expected a crash, but did not get a stack trace");
+    }
+    if (expectedNumberOfFindings > 0 && (findings.size() != expectedNumberOfFindings)) {
+      throw new IllegalStateException(
+          String.format(
+              "Expected %d findings, but got %d:%n%s",
+              expectedNumberOfFindings, findings.size(), String.join("\n", findings)));
     }
     for (String finding : findings) {
       if (!expectedFindings.contains(finding)) {

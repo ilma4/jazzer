@@ -1,27 +1,19 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator;
 
-import static com.code_intelligence.jazzer.mutation.mutator.Mutators.validateAnnotationUsage;
+import static com.code_intelligence.jazzer.mutation.support.AnnotationSupport.validateAnnotationUsage;
 import static com.code_intelligence.jazzer.mutation.support.InputStreamSupport.extendWithZeros;
 import static com.code_intelligence.jazzer.mutation.support.Preconditions.require;
 import static com.code_intelligence.jazzer.mutation.support.TestSupport.anyPseudoRandom;
 import static com.code_intelligence.jazzer.mutation.support.TestSupport.asMap;
-import static com.code_intelligence.jazzer.mutation.support.TypeSupport.asAnnotatedType;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 import static java.lang.Math.floor;
@@ -42,12 +34,15 @@ import com.code_intelligence.jazzer.mutation.annotation.DoubleInRange;
 import com.code_intelligence.jazzer.mutation.annotation.FloatInRange;
 import com.code_intelligence.jazzer.mutation.annotation.InRange;
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
+import com.code_intelligence.jazzer.mutation.annotation.WithLength;
 import com.code_intelligence.jazzer.mutation.annotation.WithSize;
 import com.code_intelligence.jazzer.mutation.annotation.proto.AnySource;
 import com.code_intelligence.jazzer.mutation.annotation.proto.WithDefaultInstance;
+import com.code_intelligence.jazzer.mutation.api.ExtendedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.PseudoRandom;
 import com.code_intelligence.jazzer.mutation.api.Serializer;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.support.TestSupport.ParameterHolder;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
 import com.code_intelligence.jazzer.protobuf.Proto2.TestProtobuf;
 import com.code_intelligence.jazzer.protobuf.Proto3.AnyField3;
@@ -81,6 +76,11 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.lang.reflect.AnnotatedType;
+import java.lang.reflect.Array;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -94,6 +94,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+@SuppressWarnings({"unused", "unchecked", "SameParameterValue"})
 public class StressTest {
   private static final int NUM_INITS = 400;
   private static final int NUM_MUTATE_PER_INIT = 80;
@@ -110,6 +111,302 @@ public class StressTest {
     C
   }
 
+  private record SimpleRecord(int i, boolean b) {}
+
+  private record RepeatedRecord(SimpleRecord first, SimpleRecord second) {}
+
+  private record LinkedListNode(SimpleRecord value, LinkedListNode next) {}
+
+  public static class SomeSetterBasedBean {
+    protected long quz;
+
+    public long getQuz() {
+      return quz;
+    }
+
+    public void setQuz(long quz) {
+      this.quz = quz;
+    }
+  }
+
+  public static class SetterBasedBeanWithParent extends SomeSetterBasedBean {
+    private boolean foo;
+    private String bar;
+    private int baz;
+
+    public boolean isFoo() {
+      return foo;
+    }
+
+    public void setFoo(boolean foo) {
+      this.foo = foo;
+    }
+
+    public String getBar() {
+      return bar;
+    }
+
+    public int getBaz() {
+      return baz;
+    }
+
+    // Out-of-order setters are supported.
+    public void setBaz(int baz) {
+      this.baz = baz;
+    }
+
+    // Chainable setters are supported.
+    public SetterBasedBeanWithParent setBar(String bar) {
+      this.bar = bar;
+      return this;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      SetterBasedBeanWithParent that = (SetterBasedBeanWithParent) o;
+      return quz == that.quz && foo == that.foo && baz == that.baz && Objects.equals(bar, that.bar);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(quz, foo, bar, baz);
+    }
+
+    @Override
+    public String toString() {
+      return "SetterBasedBeanWithParent{quz="
+          + quz
+          + ", foo="
+          + foo
+          + ", bar='"
+          + bar
+          + "', baz="
+          + baz
+          + '}';
+    }
+  }
+
+  public static class LinkedListBean {
+    private LinkedListBean next;
+    private int value;
+
+    public LinkedListBean getNext() {
+      return next;
+    }
+
+    public void setNext(LinkedListBean next) {
+      this.next = next;
+    }
+
+    public int getValue() {
+      return value;
+    }
+
+    public void setValue(int value) {
+      this.value = value;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      LinkedListBean that = (LinkedListBean) o;
+      return value == that.value && Objects.equals(next, that.next);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(next, value);
+    }
+
+    @Override
+    public String toString() {
+      return "LinkedListBean{" + "next=" + next + ", value=" + value + '}';
+    }
+  }
+
+  public static class ImmutableBuilder {
+    private final int i;
+    private final boolean b;
+
+    public ImmutableBuilder() {
+      this(0, false);
+    }
+
+    private ImmutableBuilder(int i, boolean b) {
+      this.i = i;
+      this.b = b;
+    }
+
+    public int getI() {
+      return i;
+    }
+
+    public boolean isB() {
+      return b;
+    }
+
+    public ImmutableBuilder withI(int i) {
+      return new ImmutableBuilder(i, b);
+    }
+
+    // Both withX and setX are supported on immutable builders.
+    public ImmutableBuilder setB(boolean b) {
+      return new ImmutableBuilder(i, b);
+    }
+
+    @Override
+    @SuppressWarnings("PatternVariableCanBeUsed")
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (!(o instanceof ImmutableBuilder)) return false;
+      ImmutableBuilder that = (ImmutableBuilder) o;
+      return i == that.i && b == that.b;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(i, b);
+    }
+
+    @Override
+    public String toString() {
+      return "ImmutableBuilder{" + "i=" + i + ", b=" + b + '}';
+    }
+  }
+
+  public static class ConstructorBasedBean {
+    private final boolean foo;
+    private final String bar;
+    private final int baz;
+
+    ConstructorBasedBean(boolean foo, String bar, int baz) {
+      this.foo = foo;
+      this.bar = bar;
+      this.baz = baz;
+    }
+
+    boolean isFoo() {
+      return foo;
+    }
+
+    public String getBar() {
+      return bar;
+    }
+
+    public int getBaz() {
+      return baz;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      ConstructorBasedBean that = (ConstructorBasedBean) o;
+      return foo == that.foo && baz == that.baz && Objects.equals(bar, that.bar);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(foo, bar, baz);
+    }
+
+    @Override
+    public String toString() {
+      return "ConstructorBasedBean{" + "foo=" + foo + ", bar='" + bar + '\'' + ", baz=" + baz + '}';
+    }
+  }
+
+  public static class OnlyConstructorBean {
+    private final String foo;
+    private final List<Integer> bar;
+    private final boolean baz;
+
+    OnlyConstructorBean(String foo, List<Integer> bar, boolean baz) {
+      this.foo = foo;
+      this.bar = bar;
+      this.baz = baz;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      OnlyConstructorBean that = (OnlyConstructorBean) o;
+      return baz == that.baz && Objects.equals(foo, that.foo) && Objects.equals(bar, that.bar);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(foo, bar, baz);
+    }
+
+    @Override
+    public String toString() {
+      return "OnlyConstructorBean{" + "foo='" + foo + '\'' + ", bar=" + bar + ", baz=" + baz + '}';
+    }
+  }
+
+  public static class SuperBuilderTarget {
+    private final String foo;
+
+    protected SuperBuilderTarget(SuperBuilderTargetBuilder<?, ?> b) {
+      this.foo = b.foo;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      SuperBuilderTarget that = (SuperBuilderTarget) o;
+      return Objects.equals(foo, that.foo);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hashCode(foo);
+    }
+
+    public static SuperBuilderTargetBuilder<?, ?> builder() {
+      return new SuperBuilderTargetBuilderImpl();
+    }
+
+    public abstract static class SuperBuilderTargetBuilder<
+        C extends SuperBuilderTarget, B extends SuperBuilderTargetBuilder<C, B>> {
+      private String foo;
+
+      public SuperBuilderTargetBuilder() {}
+
+      public B foo(String foo) {
+        this.foo = foo;
+        return this.self();
+      }
+
+      protected abstract B self();
+
+      public abstract C build();
+
+      public String toString() {
+        return "SuperBuilderTargetBuilder(foo=" + this.foo + ")";
+      }
+    }
+
+    private static final class SuperBuilderTargetBuilderImpl
+        extends SuperBuilderTargetBuilder<SuperBuilderTarget, SuperBuilderTargetBuilderImpl> {
+      private SuperBuilderTargetBuilderImpl() {}
+
+      protected SuperBuilderTargetBuilderImpl self() {
+        return this;
+      }
+
+      public SuperBuilderTarget build() {
+        return new SuperBuilderTarget(this);
+      }
+    }
+  }
+
   @SuppressWarnings("unused")
   static Message getTestProtobufDefaultInstance() {
     return TestProtobuf.getDefaultInstance();
@@ -118,7 +415,9 @@ public class StressTest {
   public static Stream<Arguments> stressTestCases() {
     return Stream.of(
         arguments(
-            asAnnotatedType(boolean.class),
+            new ParameterHolder() {
+              void singleParam(boolean parameter) {}
+            }.annotatedType(),
             "Boolean",
             true,
             exactly(false, true),
@@ -161,14 +460,65 @@ public class StressTest {
                 null, emptyList(), singletonList(null), singletonList(false), singletonList(true)),
             distinctElementsRatio(0.30)),
         arguments(
+            new TypeHolder<@NotNull Boolean @NotNull []>() {}.annotatedType(),
+            "Boolean[]",
+            false,
+            containsArrays(emptyList(), singletonList(false), singletonList(true)),
+            distinctElementsRatio(0.45)),
+        arguments(
+            new TypeHolder<boolean @NotNull []>() {}.annotatedType(),
+            "boolean[]",
+            false,
+            containsArrays(emptyList(), singletonList(false), singletonList(true)),
+            distinctElementsRatio(0.45)),
+        arguments(
+            new TypeHolder<
+                @InRange(min = 5, max = 6) @NotNull Integer @NotNull []>() {}.annotatedType(),
+            "Integer[]",
+            false,
+            containsArrays(emptyList(), singletonList(5), singletonList(6)),
+            distinctElementsRatio(0.30)),
+        arguments(
+            new TypeHolder<@InRange(min = 5, max = 6) int[]>() {}.annotatedType(),
+            "Nullable<int[]>",
+            false,
+            containsArrays(emptyList(), singletonList(5), singletonList(6)),
+            distinctElementsRatio(0.45)),
+        arguments(
+            new TypeHolder<@NotNull String @NotNull []>() {}.annotatedType(),
+            "String[]",
+            false,
+            distinctElementsRatio(0.45),
+            distinctElementsRatio(0.45)),
+        arguments(
+            new TypeHolder<byte @NotNull []>() {}.annotatedType(),
+            "byte[]",
+            false,
+            distinctElementsRatio(0.30),
+            distinctElementsRatio(0.30)),
+        arguments(
+            new TypeHolder<@NotNull TestEnumThree @NotNull []>() {}.annotatedType(),
+            "Enum<TestEnumThree>[]",
+            false,
+            distinctElementsRatio(0.30),
+            distinctElementsRatio(0.30)),
+        arguments(
+            new TypeHolder<
+                @NotNull ConstructorBasedBean @NotNull @WithLength(max = 10)
+                    []>() {}.annotatedType(),
+            "[Boolean, Nullable<String>, Integer] -> ConstructorBasedBean[]",
+            false,
+            distinctElementsRatio(0.30),
+            distinctElementsRatio(0.30)),
+        arguments(
             new TypeHolder<@NotNull Map<@NotNull String, @NotNull String>>() {}.annotatedType(),
-            "Map<String,String>",
+            "Map<String, String>",
             false,
             distinctElementsRatio(0.45),
             distinctElementsRatio(0.45)),
         arguments(
             new TypeHolder<Map<@NotNull String, @NotNull String>>() {}.annotatedType(),
-            "Nullable<Map<String,String>>",
+            "Nullable<Map<String, String>>",
             false,
             distinctElementsRatio(0.46),
             distinctElementsRatio(0.48)),
@@ -176,14 +526,14 @@ public class StressTest {
             new TypeHolder<
                 @WithSize(max = 3) @NotNull Map<
                     @NotNull Integer, @NotNull Integer>>() {}.annotatedType(),
-            "Map<Integer,Integer>",
+            "Map<Integer, Integer>",
             false,
             // Half of all maps are empty, the other half is heavily biased towards special values.
-            all(mapSizeInClosedRange(0, 3), distinctElementsRatio(0.2)),
+            all(mapSizeInClosedRange(0, 3), distinctElementsRatio(0.19)),
             all(mapSizeInClosedRange(0, 3), manyDistinctElements())),
         arguments(
             new TypeHolder<@NotNull Map<@NotNull Boolean, @NotNull Boolean>>() {}.annotatedType(),
-            "Map<Boolean,Boolean>",
+            "Map<Boolean, Boolean>",
             false,
             exactly(
                 asMap(),
@@ -202,7 +552,9 @@ public class StressTest {
                 asMap(false, true, true, false),
                 asMap(false, true, true, true))),
         arguments(
-            asAnnotatedType(byte.class),
+            new ParameterHolder() {
+              void singleParam(byte parameter) {}
+            }.annotatedType(),
             "Byte",
             true,
             // init is heavily biased towards special values and only returns a uniformly random
@@ -213,7 +565,9 @@ public class StressTest {
             // With mutations, we expect to reach all possible bytes.
             exactly(rangeClosed(Byte.MIN_VALUE, Byte.MAX_VALUE).mapToObj(i -> (byte) i).toArray())),
         arguments(
-            asAnnotatedType(short.class),
+            new ParameterHolder() {
+              void singleParam(short parameter) {}
+            }.annotatedType(),
             "Short",
             true,
             // init is heavily biased towards special values and only returns a uniformly random
@@ -227,7 +581,9 @@ public class StressTest {
             expectedNumberOfDistinctElements(
                 1 << Short.SIZE, NUM_INITS * NUM_MUTATE_PER_INIT * 9 / 10)),
         arguments(
-            asAnnotatedType(int.class),
+            new ParameterHolder() {
+              void singleParam(int parameter) {}
+            }.annotatedType(),
             "Integer",
             true,
             // init is heavily biased towards special values and only returns a uniformly random
@@ -238,6 +594,38 @@ public class StressTest {
             // See "Short" case.
             expectedNumberOfDistinctElements(
                 1L << Integer.SIZE, NUM_INITS * NUM_MUTATE_PER_INIT * 9 / 10)),
+        arguments(
+            new TypeHolder<@NotNull LocalDate>() {}.annotatedType(),
+            "LocalDate",
+            true,
+            // We set the ratio relatively low because the long mutator is biased towards special
+            // values.
+            distinctElementsRatio(0.15),
+            distinctElementsRatio(0.15)),
+        arguments(
+            new TypeHolder<@NotNull LocalDateTime>() {}.annotatedType(),
+            "LocalDateTime",
+            true,
+            // We set the ratio relatively low because the long mutator is biased towards special
+            // values.
+            distinctElementsRatio(0.15),
+            distinctElementsRatio(0.15)),
+        arguments(
+            new TypeHolder<@NotNull ZonedDateTime>() {}.annotatedType(),
+            "ZonedDateTime",
+            true,
+            // We set the ratio relatively low because the long mutator is biased towards special
+            // values.
+            distinctElementsRatio(0.15),
+            distinctElementsRatio(0.15)),
+        arguments(
+            new TypeHolder<@NotNull LocalTime>() {}.annotatedType(),
+            "LocalTime",
+            true,
+            // We set the ratio relatively low because the long mutator is biased towards special
+            // values.
+            distinctElementsRatio(0.15),
+            distinctElementsRatio(0.15)),
         arguments(
             new TypeHolder<@NotNull @InRange(min = 0) Long>() {}.annotatedType(),
             "Long",
@@ -258,13 +646,13 @@ public class StressTest {
             exactly(rangeClosed(Integer.MIN_VALUE, Integer.MIN_VALUE + 5).boxed().toArray()),
             exactly(rangeClosed(Integer.MIN_VALUE, Integer.MIN_VALUE + 5).boxed().toArray())),
         arguments(
-            asAnnotatedType(TestEnumTwo.class),
+            new TypeHolder<TestEnumTwo>() {}.annotatedType(),
             "Nullable<Enum<TestEnumTwo>>",
             true,
             exactly(null, TestEnumTwo.A, TestEnumTwo.B),
             exactly(null, TestEnumTwo.A, TestEnumTwo.B)),
         arguments(
-            asAnnotatedType(TestEnumThree.class),
+            new TypeHolder<TestEnumThree>() {}.annotatedType(),
             "Nullable<Enum<TestEnumThree>>",
             true,
             exactly(null, TestEnumThree.A, TestEnumThree.B, TestEnumThree.C),
@@ -348,7 +736,73 @@ public class StressTest {
             "FuzzedDataProvider",
             false,
             distinctElementsRatio(0.45),
-            distinctElementsRatio(0.45)));
+            distinctElementsRatio(0.45)),
+        arguments(
+            new TypeHolder<@NotNull SimpleRecord>() {}.annotatedType(),
+            "[Integer, Boolean] -> SimpleRecord",
+            true,
+            contains(new SimpleRecord(0, false)),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull RepeatedRecord>() {}.annotatedType(),
+            "[Nullable<[Integer, Boolean] -> SimpleRecord>, Nullable<[Integer, Boolean] ->"
+                + " SimpleRecord>] -> RepeatedRecord",
+            true,
+            distinctElementsRatio(0.49),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull LinkedListNode>() {}.annotatedType(),
+            "[Nullable<[Integer, Boolean] -> SimpleRecord>, Nullable<RecursionBreaking((cycle) ->"
+                + " LinkedListNode)>] -> LinkedListNode",
+            false,
+            // Low due to recursion breaking initializing nested records to null.
+            distinctElementsRatio(0.23),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull SetterBasedBeanWithParent>() {}.annotatedType(),
+            "[Nullable<String>, Integer, Boolean, Long] -> SetterBasedBeanWithParent",
+            false,
+            manyDistinctElements(),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull LinkedListBean>() {}.annotatedType(),
+            "[Nullable<RecursionBreaking((cycle) -> LinkedListBean)>, Integer] -> LinkedListBean",
+            false,
+            // Low due to recursion breaking initializing nested structs to null.
+            distinctElementsRatio(0.22),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull ImmutableBuilder>() {}.annotatedType(),
+            "[Boolean, Integer] -> ImmutableBuilder",
+            true,
+            // Low due to int and boolean fields having very few common values during init.
+            distinctElementsRatio(0.23),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull ConstructorBasedBean>() {}.annotatedType(),
+            "[Boolean, Nullable<String>, Integer] -> ConstructorBasedBean",
+            false,
+            manyDistinctElements(),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull OnlyConstructorBean>() {}.annotatedType(),
+            "[Nullable<String>, Nullable<List<Nullable<Integer>>>, Boolean] -> OnlyConstructorBean",
+            false,
+            manyDistinctElements(),
+            manyDistinctElements()),
+        arguments(
+            new TypeHolder<@NotNull List<OnlyConstructorBean>>() {}.annotatedType(),
+            "List<Nullable<[Nullable<String>, Nullable<List<Nullable<Integer>>>, Boolean] ->"
+                + " OnlyConstructorBean>>",
+            false,
+            distinctElementsRatio(0.4),
+            distinctElementsRatio(0.4)),
+        arguments(
+            new TypeHolder<SuperBuilderTarget>() {}.annotatedType(),
+            "Nullable<[[Nullable<String>] -> SuperBuilderTargetBuilder] -> SuperBuilderTarget>",
+            false,
+            distinctElementsRatio(0.4),
+            distinctElementsRatio(0.4)));
   }
 
   public static Stream<Arguments> protoStressTestCases() {
@@ -438,13 +892,13 @@ public class StressTest {
             manyDistinctElements()),
         arguments(
             new TypeHolder<@NotNull MapField3>() {}.annotatedType(),
-            "{Builder.Map<Integer,String>} -> Message",
+            "{Builder.Map<Integer, String>} -> Message",
             false,
             distinctElementsRatio(0.46),
             manyDistinctElements()),
         arguments(
             new TypeHolder<@NotNull MessageMapField3>() {}.annotatedType(),
-            "{Builder.Map<String,{Builder.Map<Integer,String>} -> Message>} -> Message",
+            "{Builder.Map<String, {Builder.Map<Integer, String>} -> Message>} -> Message",
             false,
             distinctElementsRatio(0.45),
             distinctElementsRatio(0.45)),
@@ -485,7 +939,7 @@ public class StressTest {
                 + " List<Integer>, Builder via List<Long>, Builder via List<Long>, Builder via"
                 + " List<Float>, Builder via List<Double>, Builder via List<String>, Builder via"
                 + " List<Enum<Enum>>, WithoutInit(Builder via List<(cycle) -> Message>),"
-                + " Builder.Map<Integer,Integer>, Builder.Nullable<FixedValue(OnlyLabel)>,"
+                + " Builder.Map<Integer, Integer>, Builder.Nullable<FixedValue(OnlyLabel)>,"
                 + " Builder.Nullable<{<empty>} -> Message>, Builder.Nullable<Integer> |"
                 + " Builder.Nullable<Long> | Builder.Nullable<Integer>} -> Message",
             false,
@@ -507,7 +961,7 @@ public class StressTest {
                 + " List<Integer>, Builder via List<Long>, Builder via List<Long>, Builder via"
                 + " List<Float>, Builder via List<Double>, Builder via List<String>, Builder via"
                 + " List<Enum<Enum>>, WithoutInit(Builder via List<(cycle) -> Message>),"
-                + " Builder.Map<Integer,Integer>, Builder.Nullable<FixedValue(OnlyLabel)>,"
+                + " Builder.Map<Integer, Integer>, Builder.Nullable<FixedValue(OnlyLabel)>,"
                 + " Builder.Nullable<{<empty>} -> Message>, Builder.Nullable<Integer> |"
                 + " Builder.Nullable<Long> | Builder.Nullable<Integer>} -> Message",
             false,
@@ -520,7 +974,7 @@ public class StressTest {
             "{Builder.Nullable<Builder.{Builder.Boolean} -> Message |"
                 + " Builder.{Builder.Nullable<(cycle) -> Message>} -> Message -> Message>} ->"
                 + " Message",
-            false,
+            true,
             exactly(
                 AnyField3.getDefaultInstance(),
                 AnyField3.newBuilder()
@@ -618,6 +1072,7 @@ public class StressTest {
     double standardDeviation = sqrt(variance);
     // Allow missing the expected value by two standard deviations. For a normal distribution,
     // this would correspond to 95% of all cases.
+    @SuppressWarnings("UnnecessaryLocalVariable")
     int almostCertainLowerBound = (int) floor(expectedValue - 2 * standardDeviation);
     return almostCertainLowerBound;
   }
@@ -676,8 +1131,16 @@ public class StressTest {
     return containsInternal(true, expected);
   }
 
+  private static CloseableConsumer exactlyArrays(Object... expected) {
+    return containsArraysInternal(true, expected);
+  }
+
   private static CloseableConsumer contains(Object... expected) {
     return containsInternal(false, expected);
+  }
+
+  private static <T> CloseableConsumer containsArrays(T... expected) {
+    return containsArraysInternal(false, expected);
   }
 
   private static CloseableConsumer containsInternal(boolean exactly, Object... expected) {
@@ -708,6 +1171,42 @@ public class StressTest {
     };
   }
 
+  private static <T, K> CloseableConsumer containsArraysInternal(boolean exactly, T... expected) {
+    Map<List<K>, Boolean> sawValue =
+        (Map<List<K>, Boolean>)
+            stream(expected)
+                .collect(
+                    toMap(
+                        value -> value,
+                        value -> false,
+                        (a, b) -> {
+                          throw new IllegalStateException("Duplicate value " + a);
+                        },
+                        HashMap::new));
+    return new CloseableConsumer() {
+      @Override
+      public void accept(Object value) {
+        List<K> list = new ArrayList<>();
+        if (value != null) {
+          for (int i = 0; i < Array.getLength(value); i++) {
+            list.add((K) Array.get(value, i));
+          }
+        }
+
+        if (exactly) {
+          assertThat(list).isIn(sawValue.keySet());
+        }
+        sawValue.put(list, true);
+      }
+
+      @Override
+      public void close() {
+        assertThat(sawValue.entrySet().stream().filter(e -> !e.getValue()).collect(toList()))
+            .isEmpty();
+      }
+    };
+  }
+
   private static CloseableConsumer doesNotContain(Object... expected) {
     return new CloseableConsumer() {
       @Override
@@ -725,8 +1224,8 @@ public class StressTest {
       @Override
       public void accept(Object map) {
         if (map instanceof Map) {
-          assertThat(((Map) map).size()).isAtLeast(min);
-          assertThat(((Map) map).size()).isAtMost(max);
+          assertThat(((Map<?, ?>) map).size()).isAtLeast(min);
+          assertThat(((Map<?, ?>) map).size()).isAtMost(max);
         } else {
           throw new IllegalArgumentException(
               "Expected a list of maps, got list of" + map.getClass().getName());
@@ -740,6 +1239,7 @@ public class StressTest {
 
   interface CloseableConsumer extends AutoCloseable, Consumer<Object> {}
 
+  @SuppressWarnings("rawtypes")
   @ParameterizedTest(name = "{index} {0}, {1}")
   @MethodSource({"stressTestCases", "protoStressTestCases"})
   void genericMutatorStressTest(
@@ -750,7 +1250,9 @@ public class StressTest {
       CloseableConsumer checkMutatedValues)
       throws Exception {
     validateAnnotationUsage(type);
-    SerializingMutator mutator = Mutators.newFactory().createOrThrow(type);
+    ExtendedMutatorFactory factory = Mutators.newFactory();
+
+    SerializingMutator mutator = factory.createOrThrow(type);
     assertThat(mutator.toString()).isEqualTo(mutatorTree);
     assertThat(mutator.hasFixedSize()).isEqualTo(hasFixedSize);
 
@@ -758,7 +1260,7 @@ public class StressTest {
     // {false: true, true: false} will not change its equality class when the fallback picks both
     // values to mutate.
     boolean mayPerformNoopMutations =
-        mutatorTree.contains("FixedValue(") || mutatorTree.contains("Map<Boolean,Boolean>");
+        mutatorTree.contains("FixedValue(") || mutatorTree.contains("Map<Boolean, Boolean>");
 
     PseudoRandom rng = anyPseudoRandom();
 
@@ -797,9 +1299,16 @@ public class StressTest {
         // cause the assertion above to fail from time to time. To avoid this, we convert all
         // negative zeros to positive zeros for float and double proto fields.
         value = fixFloatingPointsForProtos(value);
+        testReadWriteRoundtrip(mutator, value);
+        testReadWriteExclusiveRoundtrip(mutator, value);
+
+        // Verify that the initial value was isolated and not mutated as well.
         testReadWriteRoundtrip(mutator, fixedValue);
         testReadWriteExclusiveRoundtrip(mutator, fixedValue);
       }
+
+      // Cleanup factory cache after mutations to reduce memory consumption.
+      factory.getCache().clear();
     }
 
     checkInitValues.close();

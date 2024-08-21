@@ -1,16 +1,11 @@
-# Copyright 2021 Code Intelligence GmbH
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Copyright 2024 Code Intelligence GmbH
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
+# By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+# located in the root directory of the project.
+#
 
 def java_fuzz_target_test(
         name,
@@ -33,8 +28,10 @@ def java_fuzz_target_test(
         # Superset of the findings the fuzzer is expected to find. Since fuzzing runs are not
         # deterministic across OSes, pinpointing the exact set of findings is difficult.
         allowed_findings = [],
+        expect_number_of_findings = 0,
         # By default, expect a crash iff allowed_findings isn't empty.
         expect_crash = None,
+        expect_non_crash_exit_code = None,
         # If empty, expect no warnings or errors, if not empty, expect one matching the given regex.
         expected_warning_or_error = "",
         **kwargs):
@@ -116,7 +113,9 @@ def java_fuzz_target_test(
             str(verify_crash_input),
             str(verify_crash_reproducer),
             str(expect_crash),
+            str(expect_non_crash_exit_code or -1),
             str(launcher_variant == "java"),
+            str(expect_number_of_findings),
             "'" + expected_warning_or_error + "'",
             "'" + ",".join(allowed_findings) + "'",
         ] + fuzzer_args,

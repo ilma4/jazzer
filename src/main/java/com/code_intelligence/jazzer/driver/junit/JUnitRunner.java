@@ -1,22 +1,17 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.driver.junit;
 
+import static com.code_intelligence.jazzer.driver.Constants.JAZZER_ERROR_EXIT_CODE;
 import static com.code_intelligence.jazzer.driver.Constants.JAZZER_FINDING_EXIT_CODE;
+import static com.code_intelligence.jazzer.driver.Constants.JAZZER_SUCCESS_EXIT_CODE;
 import static org.junit.platform.engine.FilterResult.includedIf;
 import static org.junit.platform.engine.TestExecutionResult.Status.ABORTED;
 import static org.junit.platform.engine.TestExecutionResult.Status.FAILED;
@@ -25,6 +20,9 @@ import static org.junit.platform.launcher.TagFilter.includeTags;
 
 import com.code_intelligence.jazzer.driver.ExceptionUtils;
 import com.code_intelligence.jazzer.driver.Opt;
+import com.code_intelligence.jazzer.junit.ExitCodeException;
+import com.code_intelligence.jazzer.junit.FuzzTestConfigurationError;
+import com.code_intelligence.jazzer.junit.FuzzTestFindingException;
 import com.code_intelligence.jazzer.utils.Log;
 import java.util.List;
 import java.util.Map;
@@ -81,16 +79,31 @@ public final class JUnitRunner {
             .build();
 
     Map<String, String> indexedArgs =
-        IntStream.range(0, libFuzzerArgs.size())
+        IntStream.range(JAZZER_SUCCESS_EXIT_CODE, libFuzzerArgs.size())
             .boxed()
             .collect(Collectors.toMap(i -> "jazzer.internal.arg." + i, libFuzzerArgs::get));
+
+    // This class is only invoked via CLI, hence the timeout mode can be set solely based on the
+    // fuzzing mode parameter.
+    // The timeout mode is set to "disabled" in fuzzing mode, as libFuzzer handles timeouts.
+    // In non-fuzzing mode, the timeout mode is set to "enabled" to ensure that JUnit handles
+    // timeouts.
+    String timeoutMode = Opt.isFuzzing.get() ? "disabled" : "enabled";
+    Log.debug("JUnit timeout mode: " + timeoutMode);
+
+    // If fuzzing is enabled, set the JAZZER_FUZZ environment variable to propagate the mode
+    // to the JUnit integration, as that can't access Opt and the setting can not be
+    // passed on easily in other ways.
+    if (Opt.isFuzzing.get()) {
+      System.setProperty("JAZZER_FUZZ", "true");
+    }
 
     LauncherDiscoveryRequestBuilder requestBuilder =
         LauncherDiscoveryRequestBuilder.request()
             // JUnit's timeout handling interferes with libFuzzer as from the point of view of JUnit
             // all fuzz test invocations are combined in a single JUnit test method execution.
             // https://junit.org/junit5/docs/current/user-guide/#writing-tests-declarative-timeouts-mode
-            .configurationParameter("junit.jupiter.execution.timeout.mode", "disabled")
+            .configurationParameter("junit.jupiter.execution.timeout.mode", timeoutMode)
             .configurationParameter("jazzer.internal.command_line", "true")
             .configurationParameters(indexedArgs)
             .selectors(selectClass(testClassName))
@@ -124,6 +137,27 @@ public final class JUnitRunner {
         testPlan,
         new TestExecutionListener() {
           @Override
+          public void testPlanExecutionStarted(TestPlan testPlan) {
+            Log.debug("Fuzzing started for " + testPlan);
+          }
+
+          @Override
+          public void executionStarted(TestIdentifier testIdentifier) {
+            Log.debug("Fuzz test started: " + testIdentifier.getDisplayName());
+          }
+
+          @Override
+          public void executionSkipped(TestIdentifier testIdentifier, String reason) {
+            Log.debug(
+                "Fuzz test skipped: " + testIdentifier.getDisplayName() + " (" + reason + ")");
+          }
+
+          @Override
+          public void testPlanExecutionFinished(TestPlan testPlan) {
+            Log.debug("Fuzzing finished for " + testPlan);
+          }
+
+          @Override
           public void executionFinished(
               TestIdentifier testIdentifier, TestExecutionResult testExecutionResult) {
             if (testIdentifier.isTest()) {
@@ -152,11 +186,12 @@ public final class JUnitRunner {
         });
 
     TestExecutionResult result = testResultHolder.get();
+    Log.debug("Fuzz test result: " + result);
     if (result == null) {
       // This can only happen if a test container failed, in which case we will have printed a
       // stack trace.
       Log.error("Failed to run fuzz test");
-      return 1;
+      return JAZZER_ERROR_EXIT_CODE;
     }
     if (result.getStatus() != FAILED) {
       // We do not generate a finding for aborted tests (i.e. tests whose preconditions were not
@@ -167,22 +202,30 @@ public final class JUnitRunner {
       if (sawContainerFailure.get()) {
         // A failure in a test container indicates a setup error, so we don't return the finding
         // exit code in this case.
-        return 1;
+        return JAZZER_ERROR_EXIT_CODE;
       }
-      return 0;
+      return JAZZER_SUCCESS_EXIT_CODE;
     }
 
     // Safe to unwrap as in JUnit Jupiter, tests and containers always fail with a Throwable:
     // https://github.com/junit-team/junit5/blob/ac31e9a7d58973db73496244dab4defe17ae563e/junit-platform-engine/src/main/java/org/junit/platform/engine/support/hierarchical/ThrowableCollector.java#LL176C37-L176C37
+    @SuppressWarnings("OptionalGetWithoutIsPresent")
     Throwable throwable = result.getThrowable().get();
-    if (throwable instanceof ExitCodeException) {
+    if (throwable instanceof FuzzTestFindingException) {
+      // Non-fatal findings and exceptions in containers have already been printed, the fatal
+      // finding is passed to JUnit as the test result.
+      return JAZZER_FINDING_EXIT_CODE;
+    } else if (throwable instanceof FuzzTestConfigurationError) {
+      // Error configuring JUnit for fuzzing, e.g. due to unsupported fuzz test parameter.
+      return JAZZER_ERROR_EXIT_CODE;
+    } else if (throwable instanceof ExitCodeException) {
       // libFuzzer exited with a non-zero exit code, but Jazzer didn't produce a finding. Forward
       // the exit code and assume that information has already been printed (e.g. a timeout).
       return ((ExitCodeException) throwable).exitCode;
     } else {
-      // Non-fatal findings and exceptions in containers have already been printed, the fatal
-      // finding is passed to JUnit as the test result.
-      return JAZZER_FINDING_EXIT_CODE;
+      // None-finding exceptions are not already handled, so need to be printed here.
+      Log.error(throwable);
+      return JAZZER_ERROR_EXIT_CODE;
     }
   }
 }

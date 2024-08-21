@@ -1,23 +1,17 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.support;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import com.code_intelligence.jazzer.mutation.support.TestSupport.ParameterHolder;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -63,7 +57,7 @@ class HolderTest {
   void testParameterHolder_rawType() {
     Type type =
         new ParameterHolder() {
-          void foo(List<String> parameter) {}
+          void singleParam(List<String> parameter) {}
         }.type();
     assertThat(type).isInstanceOf(ParameterizedType.class);
 
@@ -76,7 +70,7 @@ class HolderTest {
   void testParameterHolder_annotatedType() {
     AnnotatedType type =
         new ParameterHolder() {
-          void foo(@ParameterAnnotation @Foo List<@Bar String> parameter) {}
+          void singleParam(@ParameterAnnotation @Foo List<@Bar String> parameter) {}
         }.annotatedType();
     assertThat(type).isInstanceOf(AnnotatedParameterizedType.class);
 
@@ -97,7 +91,7 @@ class HolderTest {
   void testParameterHolder_parameterAnnotations() {
     Annotation[] annotations =
         new ParameterHolder() {
-          void foo(@ParameterAnnotation @Foo List<@Bar String> parameter) {}
+          void singleParam(@ParameterAnnotation @Foo List<@Bar String> parameter) {}
         }.parameterAnnotations();
     assertThat(annotations).hasLength(1);
     assertThat(annotations[0]).isInstanceOf(ParameterAnnotation.class);

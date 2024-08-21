@@ -12,21 +12,21 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             name: linux
-          - os: macos-11
+          - os: macos-13
             name: macos
           - os: windows-2019
             name: windows
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: 8
+          java-version: 21
 
       - name: Append build settings to .bazelrc
         shell: bash
@@ -35,8 +35,6 @@ jobs:
           echo "build --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_API_KEY }}" >> .bazelrc
           echo "build --config=ci" >> .bazelrc
           echo "build --//deploy:jazzer_version=${TAG#v}" >> .bazelrc
-          echo "build:linux --config=toolchain" >> .bazelrc
-          echo "build:linux --extra_toolchains=@llvm_toolchain//:cc-toolchain-x86_64-linux" >> .bazelrc
 
       - name: Build
         shell: bash
@@ -48,30 +46,31 @@ jobs:
           cp -L $(bazel cquery --output=files :jazzer_release) jazzer-${{ matrix.name }}.tar.gz
 
       - name: Upload jazzer.jar
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: jazzer_tmp
+          name: jazzer_tmp_${{ matrix.name }}
           path: jazzer-${{ matrix.name }}.jar
           if-no-files-found: error
 
       - name: Upload release archive
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: jazzer_releases
+          name: jazzer_releases_${{ matrix.name }}
           path: jazzer-${{ matrix.name }}.tar.gz
           if-no-files-found: error
 
   merge_jars:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build_release
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download individual jars
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: jazzer_tmp
+          pattern: jazzer_tmp_*
+          merge-multiple: true
           path: _tmp/
 
       - name: Merge jars
@@ -81,26 +80,24 @@ jobs:
             $(find "$(pwd)/_tmp/" -name '*.jar' -printf "--sources %h/%f ")
 
       - name: Upload merged jar
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: jazzer
           path: _tmp/jazzer.jar
           if-no-files-found: error
 
   maven_predeploy:
-    # TODO: Our hermetic toolchain doesn't support ubuntu-latest yet and fails with:
-    # external/llvm_toolchain_llvm/bin/clang: error while loading shared libraries: libtinfo.so.5: cannot open shared object file: No such file or directory
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: merge_jars
 
     environment:
       name: Deploy
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: 8
@@ -112,11 +109,9 @@ jobs:
           echo "build --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_API_KEY }}" >> .bazelrc
           echo "build --config=ci" >> .bazelrc
           echo "build --//deploy:jazzer_version=${TAG#v}" >> .bazelrc
-          echo "build:linux --config=toolchain" >> .bazelrc
-          echo "build:linux --extra_toolchains=@llvm_toolchain//:cc-toolchain-x86_64-linux" >> .bazelrc
 
       - name: Download merged jar
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: jazzer
           path: _tmp/
@@ -131,23 +126,24 @@ jobs:
 
   create_release:
     needs: build_release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     permissions:
       contents: write # for creating releases
 
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download individual tar.gzs
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: jazzer_releases
+          pattern: jazzer_releases_*
+          merge-multiple: true
           path: _releases/
 
       - name: create release
-        uses: softprops/action-gh-release@c9b46fe7aad9f02afd89b12450b780f52dacfb2d
+        uses: softprops/action-gh-release@4634c16e79c963813287e889244c50009e7f0981
         with:
           generate_release_notes: true
           draft: true

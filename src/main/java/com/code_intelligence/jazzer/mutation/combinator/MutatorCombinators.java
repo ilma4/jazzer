@@ -1,17 +1,12 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * This file also contains code licensed under Apache2 license.
  */
 
 package com.code_intelligence.jazzer.mutation.combinator;
@@ -24,6 +19,7 @@ import static java.util.stream.Collectors.joining;
 
 import com.code_intelligence.jazzer.mutation.api.Debuggable;
 import com.code_intelligence.jazzer.mutation.api.InPlaceMutator;
+import com.code_intelligence.jazzer.mutation.api.MutatorBase;
 import com.code_intelligence.jazzer.mutation.api.PseudoRandom;
 import com.code_intelligence.jazzer.mutation.api.Serializer;
 import com.code_intelligence.jazzer.mutation.api.SerializingInPlaceMutator;
@@ -36,6 +32,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -182,9 +179,10 @@ public final class MutatorCombinators {
       };
     }
 
-    boolean hasFixedSize = stream(partialMutators).allMatch(InPlaceMutator::hasFixedSize);
     final InPlaceMutator<T>[] mutators = Arrays.copyOf(partialMutators, partialMutators.length);
     return new InPlaceMutator<T>() {
+      private Boolean cachedHasFixedSize;
+
       @Override
       public void initInPlace(T reference, PseudoRandom prng) {
         for (InPlaceMutator<T> mutator : mutators) {
@@ -204,9 +202,15 @@ public final class MutatorCombinators {
         }
       }
 
+      /** See comment on {@link SerializingMutator#hasFixedSize()}. */
       @Override
       public boolean hasFixedSize() {
-        return hasFixedSize;
+        if (cachedHasFixedSize != null) {
+          return cachedHasFixedSize;
+        }
+        cachedHasFixedSize = false;
+        cachedHasFixedSize = stream(partialMutators).allMatch(InPlaceMutator::hasFixedSize);
+        return cachedHasFixedSize;
       }
 
       @Override
@@ -241,6 +245,20 @@ public final class MutatorCombinators {
     };
   }
 
+  public static <T, R> SerializingMutator<R> mutateThenMap(
+      Supplier<SerializingMutator<T>> mutator,
+      Function<T, R> map,
+      Function<R, T> inverse,
+      BiFunction<SerializingMutator<T>, Predicate<Debuggable>, String> debug,
+      Consumer<SerializingMutator<R>> registerSelf) {
+    return new PostComposedMutator<T, R>(mutator, map, inverse, registerSelf) {
+      @Override
+      public String toDebugString(Predicate<Debuggable> isInCycle) {
+        return debug.apply(this.mutator, isInCycle);
+      }
+    };
+  }
+
   public static <T, @ImmutableTypeParameter R> SerializingMutator<R> mutateThenMapToImmutable(
       SerializingMutator<T> mutator, Function<T, R> map, Function<R, T> inverse) {
     return new PostComposedMutator<T, R>(mutator, map, inverse) {
@@ -256,7 +274,17 @@ public final class MutatorCombinators {
       Function<T, R> map,
       Function<R, T> inverse,
       Function<Predicate<Debuggable>, String> debug) {
-    return new PostComposedMutator<T, R>(mutator, map, inverse) {
+    return mutateThenMapToImmutable(
+        () -> mutator, map, inverse, (unused, isInCycle) -> debug.apply(isInCycle), unused -> {});
+  }
+
+  public static <T, @ImmutableTypeParameter R> SerializingMutator<R> mutateThenMapToImmutable(
+      Supplier<SerializingMutator<T>> mutator,
+      Function<T, R> map,
+      Function<R, T> inverse,
+      BiFunction<SerializingMutator<T>, Predicate<Debuggable>, String> debug,
+      Consumer<SerializingMutator<R>> registerSelf) {
+    return new PostComposedMutator<T, R>(mutator, map, inverse, registerSelf) {
       @Override
       public R detach(R value) {
         return value;
@@ -264,7 +292,7 @@ public final class MutatorCombinators {
 
       @Override
       public String toDebugString(Predicate<Debuggable> isInCycle) {
-        return debug.apply(isInCycle);
+        return debug.apply(this.mutator, isInCycle);
       }
     };
   }
@@ -318,6 +346,11 @@ public final class MutatorCombinators {
    * Combines multiple mutators for potentially different types into one that mutates an {@code
    * Object[]} containing one instance per mutator.
    */
+  @SuppressWarnings("rawtypes")
+  public static InPlaceProductMutator mutateProductInPlace(SerializingMutator... mutators) {
+    return new InPlaceProductMutator(mutators);
+  }
+
   @SuppressWarnings("rawtypes")
   public static ProductMutator mutateProduct(SerializingMutator... mutators) {
     return new ProductMutator(mutators);
@@ -391,6 +424,9 @@ public final class MutatorCombinators {
   }
 
   /**
+   * Use {@link #markAsRequiringRecursionBreaking(SerializingMutator)} instead for {@link
+   * com.code_intelligence.jazzer.mutation.api.ValueMutator}.
+   *
    * @return a mutator that behaves identically to the provided one except that its {@link
    *     InPlaceMutator#initInPlace(Object, PseudoRandom)} is a no-op
    */
@@ -418,6 +454,62 @@ public final class MutatorCombinators {
 
       @Override
       public boolean hasFixedSize() {
+        return mutator.hasFixedSize();
+      }
+    };
+  }
+
+  /**
+   * Preferably use {@link #withoutInit(InPlaceMutator)} instead for {@link InPlaceMutator}.
+   *
+   * @return a mutator that behaves identically to the provided one except that its {@link
+   *     MutatorBase#requiresRecursionBreaking()} method returns {@code true}.
+   */
+  public static <T> SerializingMutator<T> markAsRequiringRecursionBreaking(
+      SerializingMutator<T> mutator) {
+    return new SerializingMutator<T>() {
+      @Override
+      public boolean requiresRecursionBreaking() {
+        return true;
+      }
+
+      @Override
+      public T init(PseudoRandom prng) {
+        return mutator.init(prng);
+      }
+
+      @Override
+      public String toDebugString(Predicate<Debuggable> isInCycle) {
+        return "RecursionBreaking(" + mutator.toDebugString(isInCycle) + ")";
+      }
+
+      @Override
+      public T read(DataInputStream in) throws IOException {
+        return mutator.read(in);
+      }
+
+      @Override
+      public void write(T value, DataOutputStream out) throws IOException {
+        mutator.write(value, out);
+      }
+
+      @Override
+      public T detach(T value) {
+        return mutator.detach(value);
+      }
+
+      @Override
+      public T mutate(T value, PseudoRandom prng) {
+        return mutator.mutate(value, prng);
+      }
+
+      @Override
+      public T crossOver(T value, T otherValue, PseudoRandom prng) {
+        return mutator.crossOver(value, otherValue, prng);
+      }
+
+      @Override
+      protected boolean computeHasFixedSize() {
         return mutator.hasFixedSize();
       }
     };
@@ -482,39 +574,33 @@ public final class MutatorCombinators {
    * @param serializer implementation of the {@link Serializer<T>} part
    * @param lazyMutator supplies the implementation of the {@link InPlaceMutator<T>} part. This is
    *     guaranteed to be invoked exactly once and only after {@code registerSelf}.
-   * @param hasFixedSize the value to return from the resulting mutators {@link
-   *     InPlaceMutator#hasFixedSize()}
    */
   public static <T> SerializingInPlaceMutator<T> assemble(
       Consumer<SerializingInPlaceMutator<T>> registerSelf,
       Supplier<T> makeDefaultInstance,
       Serializer<T> serializer,
-      Supplier<InPlaceMutator<T>> lazyMutator,
-      boolean hasFixedSize) {
+      Supplier<InPlaceMutator<T>> lazyMutator) {
     return new DelegatingSerializingInPlaceMutator<>(
-        registerSelf, makeDefaultInstance, serializer, lazyMutator, hasFixedSize);
+        registerSelf, makeDefaultInstance, serializer, lazyMutator);
   }
 
-  private static class DelegatingSerializingInPlaceMutator<T> extends SerializingInPlaceMutator<T> {
+  private static final class DelegatingSerializingInPlaceMutator<T>
+      extends SerializingInPlaceMutator<T> {
     private final Supplier<T> makeDefaultInstance;
     private final Serializer<T> serializer;
     private final InPlaceMutator<T> mutator;
-    private final boolean hasFixedSize;
 
     private DelegatingSerializingInPlaceMutator(
         Consumer<SerializingInPlaceMutator<T>> registerSelf,
         Supplier<T> makeDefaultInstance,
         Serializer<T> serializer,
-        Supplier<InPlaceMutator<T>> lazyMutator,
-        boolean hasFixedSize) {
+        Supplier<InPlaceMutator<T>> lazyMutator) {
       requireNonNull(makeDefaultInstance);
       requireNonNull(serializer);
 
       registerSelf.accept(this);
       this.makeDefaultInstance = makeDefaultInstance;
       this.serializer = serializer;
-      // Set before invoking the supplier as that can result in calls to hasFixedSize().
-      this.hasFixedSize = hasFixedSize;
       this.mutator = lazyMutator.get();
     }
 
@@ -534,10 +620,8 @@ public final class MutatorCombinators {
     }
 
     @Override
-    public boolean hasFixedSize() {
-      // This uses a fixed value rather than calling mutator.hasFixedSize() as this method is called
-      // before the constructor has finished, which is necessary in the case of a cycle.
-      return hasFixedSize;
+    protected boolean computeHasFixedSize() {
+      return mutator.hasFixedSize();
     }
 
     @Override

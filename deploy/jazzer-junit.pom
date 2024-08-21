@@ -1,3 +1,12 @@
+<!--
+  ~ Copyright 2024 Code Intelligence GmbH
+  ~
+  ~ By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
+  ~
+  ~ The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+  ~ located in the root directory of the project.
+  -->
+
 <project>
     <modelVersion>4.0.0</modelVersion>
     <groupId>{groupId}</groupId>
@@ -13,27 +22,10 @@
     <description>JUnit 5 support for Jazzer fuzz tests</description>
     <url>https://github.com/CodeIntelligenceTesting/jazzer</url>
 
-    <licenses>
-        <license>
-            <name>Apache License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
-
     <organization>
         <name>Code Intelligence GmbH</name>
         <url>https://code-intelligence.com</url>
     </organization>
-
-    <developers>
-        <developer>
-            <id>fmeum</id>
-            <name>Fabian Meumertzheim</name>
-            <email>meumertzheim@code-intelligence.com</email>
-            <organization>Code Intelligence GmbH</organization>
-        </developer>
-    </developers>
 
     <scm>
         <url>https://github.com/CodeIntelligenceTesting/jazzer</url>

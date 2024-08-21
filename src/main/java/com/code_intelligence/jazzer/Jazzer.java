@@ -1,21 +1,17 @@
 /*
- * Copyright 2022 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * This file also contains code licensed under Apache2 license.
  */
 
 package com.code_intelligence.jazzer;
 
+import static com.code_intelligence.jazzer.Constants.JAZZER_VERSION;
 import static com.code_intelligence.jazzer.runtime.Constants.IS_ANDROID;
 import static java.lang.System.exit;
 import static java.util.Arrays.asList;
@@ -27,6 +23,8 @@ import static java.util.stream.Collectors.toSet;
 import com.code_intelligence.jazzer.android.AndroidRuntime;
 import com.code_intelligence.jazzer.driver.Driver;
 import com.code_intelligence.jazzer.driver.Opt;
+import com.code_intelligence.jazzer.driver.junit.FuzzTestLister;
+import com.code_intelligence.jazzer.driver.junit.JUnitRunner;
 import com.code_intelligence.jazzer.utils.Log;
 import com.code_intelligence.jazzer.utils.ZipUtils;
 import com.github.fmeum.rules_jni.RulesJni;
@@ -83,7 +81,7 @@ public class Jazzer {
     Log.fixOutErr(System.out, System.err);
 
     Opt.registerAndValidateCommandLineArgs(parseJazzerArgs(args));
-    Opt.handleHelpAndVersionArgs();
+    handleTerminatingCommands();
 
     // --asan and --ubsan imply --native by default, but --native can also be used by itself to fuzz
     // native libraries without sanitizers (e.g. to quickly grow a corpus).
@@ -193,6 +191,40 @@ public class Jazzer {
     processBuilder.inheritIO();
 
     exit(processBuilder.start().waitFor());
+  }
+
+  private static void handleTerminatingCommands() {
+    if (Opt.help.get()) {
+      Log.println(Opt.generateHelpText());
+      exit(0);
+    }
+    if (Opt.version.get()) {
+      Log.println("Jazzer v" + JAZZER_VERSION);
+      exit(0);
+    }
+    if (Opt.listFuzzTests.isSet()) {
+      handleListFuzzTests();
+    }
+  }
+
+  private static void handleListFuzzTests() {
+    if (JUnitRunner.isSupported()) {
+      try {
+        List<String> classes = Opt.listFuzzTests.get();
+        List<String> fuzzTests = FuzzTestLister.listFuzzTests(classes);
+        if (!fuzzTests.isEmpty()) {
+          fuzzTests.forEach(Log::println);
+          exit(0);
+        } else {
+          Log.error("Could not find any fuzz tests in " + classes);
+        }
+      } catch (RuntimeException e) {
+        Log.error("Could not list fuzz tests", e);
+      }
+    } else {
+      Log.error("Could not list fuzz tests, as JUnit is not available on the classpath");
+    }
+    exit(1);
   }
 
   private static List<Map.Entry<String, String>> parseJazzerArgs(List<String> args) {
@@ -333,7 +365,7 @@ public class Jazzer {
         nativeAgentOptions += ",bootstrapClassOverrides=" + bootclassClassOverrides;
       }
 
-      // ManagementFactory wont work with Android
+      // ManagementFactory won't work with Android
       Stream<String> stream =
           Stream.of(
               "app_process",

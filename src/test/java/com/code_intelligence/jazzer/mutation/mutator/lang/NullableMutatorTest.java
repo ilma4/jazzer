@@ -1,39 +1,43 @@
 /*
- * Copyright 2023 Code Intelligence GmbH
+ * Copyright 2024 Code Intelligence GmbH
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * By downloading, you agree to the Code Intelligence Jazzer Terms and Conditions.
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * The Code Intelligence Jazzer Terms and Conditions are provided in LICENSE-JAZZER.txt
+ * located in the root directory of the project.
  */
 
 package com.code_intelligence.jazzer.mutation.mutator.lang;
 
+import static com.code_intelligence.jazzer.mutation.support.TestSupport.createOrThrow;
 import static com.code_intelligence.jazzer.mutation.support.TestSupport.mockPseudoRandom;
 import static com.google.common.truth.Truth.assertThat;
 
 import com.code_intelligence.jazzer.mutation.annotation.NotNull;
-import com.code_intelligence.jazzer.mutation.api.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.api.SerializingMutator;
+import com.code_intelligence.jazzer.mutation.engine.ChainedMutatorFactory;
 import com.code_intelligence.jazzer.mutation.support.TestSupport.MockPseudoRandom;
+import com.code_intelligence.jazzer.mutation.support.TestSupport.ParameterHolder;
 import com.code_intelligence.jazzer.mutation.support.TypeHolder;
 import java.lang.reflect.AnnotatedType;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @SuppressWarnings("unchecked")
 class NullableMutatorTest {
+  ChainedMutatorFactory factory;
+
+  @BeforeEach
+  void createFactory() {
+    factory =
+        ChainedMutatorFactory.of(
+            Stream.of(new NullableMutatorFactory(), new BooleanMutatorFactory()));
+  }
+
   @Test
   void testNullable() {
-    SerializingMutator<Boolean> mutator =
-        new ChainedMutatorFactory(new NullableMutatorFactory(), new BooleanMutatorFactory())
-            .createOrThrow(Boolean.class);
+    SerializingMutator<Boolean> mutator = createOrThrow(factory, new TypeHolder<Boolean>() {});
     assertThat(mutator.toString()).isEqualTo("Nullable<Boolean>");
 
     Boolean bool;
@@ -60,8 +64,6 @@ class NullableMutatorTest {
 
   @Test
   void testNotNull() {
-    ChainedMutatorFactory factory =
-        new ChainedMutatorFactory(new NullableMutatorFactory(), new BooleanMutatorFactory());
     AnnotatedType notNullBoolean = new TypeHolder<@NotNull Boolean>() {}.annotatedType();
     SerializingMutator<Boolean> mutator =
         (SerializingMutator<Boolean>) factory.createOrThrow(notNullBoolean);
@@ -70,17 +72,18 @@ class NullableMutatorTest {
 
   @Test
   void testPrimitive() {
-    ChainedMutatorFactory factory =
-        new ChainedMutatorFactory(new NullableMutatorFactory(), new BooleanMutatorFactory());
-    SerializingMutator<Boolean> mutator = factory.createOrThrow(boolean.class);
+    SerializingMutator<Boolean> mutator =
+        (SerializingMutator<Boolean>)
+            factory.createOrThrow(
+                new ParameterHolder() {
+                  void singleParam(boolean parameter) {}
+                }.annotatedType());
     assertThat(mutator.toString()).isEqualTo("Boolean");
   }
 
   @Test
   void testCrossOver() {
-    SerializingMutator<Boolean> mutator =
-        new ChainedMutatorFactory(new NullableMutatorFactory(), new BooleanMutatorFactory())
-            .createOrThrow(Boolean.class);
+    SerializingMutator<Boolean> mutator = createOrThrow(factory, new TypeHolder<Boolean>() {});
     try (MockPseudoRandom prng = mockPseudoRandom(true)) {
       Boolean valueCrossedOver = mutator.crossOver(Boolean.TRUE, Boolean.TRUE, prng);
       assertThat(valueCrossedOver).isNotNull();
