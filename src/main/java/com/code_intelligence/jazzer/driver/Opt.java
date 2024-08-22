@@ -179,7 +179,9 @@ public final class Opt {
       OptParser.stringListSetting(
           "instrumentation_excludes",
           "Glob patterns matching names of classes that should not be instrumented for fuzzing");
-  public static final OptItem<Boolean> junitInstrumentationExcludesTargetPackage =
+  public static final OptItem<Boolean> junitInstrumentationExcludeTargetPackage =
+      OptParser.boolSetting("junit_instrumentation_exclude_target", true, "TODO");
+  public static final OptItem<Boolean> junitCustomHooksExcludeTargetPackage =
       OptParser.boolSetting("junit_instrumentation_exclude_target", true, "TODO");
   public static final OptItem<Boolean> limitedInput =
       boolSetting(
@@ -189,7 +191,7 @@ public final class Opt {
               + "when fuzzed data is not enough");
   public static final OptItem<Boolean> ignoreInputEnd =
       boolSetting(
-          "ignore_input_end",
+          "invalidate_input_end",
           true,
           "When `NotEnoughFuzzedDateException` is thrown, should we treat is as found bug");
   public static final OptItem<List<String>> instrumentationIncludes =

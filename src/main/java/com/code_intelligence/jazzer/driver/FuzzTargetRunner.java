@@ -88,6 +88,8 @@ public final class FuzzTargetRunner {
   private static final String OPENTEST4J_TEST_ABORTED_EXCEPTION =
       "org.opentest4j.TestAbortedException";
 
+  private static final String NOT_ENOUGH_FUZZED_DATA_EXCEPTION = NotEnoughFuzzedData.class.getName();
+
   private static final Unsafe UNSAFE = UnsafeProvider.getUnsafe();
 
   private static final long BYTE_ARRAY_OFFSET = UNSAFE.arrayBaseOffset(byte[].class);
@@ -95,7 +97,7 @@ public final class FuzzTargetRunner {
   // Possible return values for the libFuzzer callback runOne.
   private static final int LIBFUZZER_CONTINUE = 0;
   private static final int LIBFUZZER_RETURN_FROM_DRIVER = -2;
-  private static final int LIBFUZZER_IGNORE = -1;
+  private static final int LIBFUZZER_INVALID_INPUT = -1;
 
   // Keep these options used in runOne (and thus the critical path) in static final fields so that
   // they can be constant-folded by the JIT.
@@ -109,7 +111,7 @@ public final class FuzzTargetRunner {
   private static final boolean emitDedupToken = Opt.dedup.get();
   private static final long keepGoing = Opt.keepGoing.get();
   private static final boolean limitedInput = Opt.limitedInput.get();
-  private static final boolean ignoreInputEnd = Opt.ignoreInputEnd.get();
+  private static final boolean invalidateInputEnd = Opt.ignoreInputEnd.get();
   private static final long crossOverFrequency = Opt.mutatorCrossOverFrequency.get();
   private static final FuzzedDataProviderImpl fuzzedDataProvider =
       FuzzedDataProviderImpl.withNativeData();
@@ -277,8 +279,8 @@ public final class FuzzTargetRunner {
       return LIBFUZZER_CONTINUE;
     }
 
-    if (finding.getClass().getName().equals(NotEnoughFuzzedData.class.getName())) {
-      return ignoreInputEnd ? LIBFUZZER_CONTINUE : LIBFUZZER_IGNORE;
+    if (finding.getClass().getName().equals(NOT_ENOUGH_FUZZED_DATA_EXCEPTION)) {
+      return invalidateInputEnd ? LIBFUZZER_CONTINUE : LIBFUZZER_INVALID_INPUT;
     }
 
     // The user-provided fuzz target method has returned. Any further exits, e.g. due to uncaught

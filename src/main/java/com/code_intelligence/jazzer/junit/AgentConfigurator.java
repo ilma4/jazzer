@@ -50,7 +50,7 @@ class AgentConfigurator {
     Opt.customHookIncludes.setIfDefault(Opt.instrument.get());
     Opt.instrumentationIncludes.setIfDefault(Opt.instrument.get());
 
-    if (Opt.junitInstrumentationExcludesTargetPackage.get()
+    if (Opt.junitInstrumentationExcludeTargetPackage.get()
         && !Opt.instrumentationExcludes.isSet()) {
       String pkg = extensionContext.getRequiredTestClass().getPackage().getName();
       Opt.instrumentationExcludes.setIfDefault(Collections.singletonList(pkg + ".**"));
@@ -65,7 +65,7 @@ class AgentConfigurator {
   private static void applyCommonConfiguration(ExtensionContext extensionContext) {
     Opt.registerConfigurationParameters(extensionContext::getConfigurationParameter);
     // Do not hook common IDE and JUnit classes and their dependencies.
-    Opt.customHookExcludes.setIfDefault(
+    List<String> hookExcludes =
         asList(
             "com.google.testing.junit.**",
             "com.intellij.**",
@@ -80,7 +80,12 @@ class AgentConfigurator {
             "org.opentest4j.**",
             "org.mockito.**",
             "org.apache.maven.**",
-            "org.gradle.**"));
+            "org.gradle.**");
+    if (Opt.junitCustomHooksExcludeTargetPackage.get()) {
+      String pkg = extensionContext.getRequiredTestClass().getPackage().getName();
+      hookExcludes.add(pkg + ".**");
+    }
+    Opt.customHookExcludes.setIfDefault(hookExcludes);
     if (isGatheringCoverage()) {
       // The IntelliJ coverage agent uses regular expressions in its instrumentor to determine which
       // classes to instrument and thus triggers our regex hook when it is asked to instrument
