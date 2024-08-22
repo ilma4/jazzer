@@ -50,7 +50,8 @@ class AgentConfigurator {
     Opt.customHookIncludes.setIfDefault(Opt.instrument.get());
     Opt.instrumentationIncludes.setIfDefault(Opt.instrument.get());
 
-    if (Opt.junitInstrumentationExcludesTargetPackage.get()) {
+    if (Opt.junitInstrumentationExcludesTargetPackage.get()
+        && !Opt.instrumentationExcludes.isSet()) {
       String pkg = extensionContext.getRequiredTestClass().getPackage().getName();
       Opt.instrumentationExcludes.setIfDefault(Collections.singletonList(pkg + ".**"));
     }
