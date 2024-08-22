@@ -16,6 +16,7 @@
 set -eu
 
 
+bazel build //:jazzer
 bazel build //deploy:jazzer-docs //deploy:jazzer-sources //deploy:jazzer-pom //deploy:jazzer-api-docs
 
 bazel run --define "maven_repo=file://$HOME/.m2/repository" //deploy:jazzer.publish

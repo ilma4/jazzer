@@ -179,6 +179,8 @@ public final class Opt {
       OptParser.stringListSetting(
           "instrumentation_excludes",
           "Glob patterns matching names of classes that should not be instrumented for fuzzing");
+  public static final OptItem<Boolean> junitInstrumentationExcludesTargetPackage =
+      OptParser.boolSetting("junit_instrumentation_exclude_target", true, "TODO");
   public static final OptItem<Boolean> limitedInput =
       boolSetting(
           "limited_input",

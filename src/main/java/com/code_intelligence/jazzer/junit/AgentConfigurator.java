@@ -16,6 +16,7 @@ import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 
 import com.code_intelligence.jazzer.driver.Opt;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -48,6 +49,11 @@ class AgentConfigurator {
     Opt.instrument.setIfDefault(determineInstrumentationFilters(extensionContext));
     Opt.customHookIncludes.setIfDefault(Opt.instrument.get());
     Opt.instrumentationIncludes.setIfDefault(Opt.instrument.get());
+
+    if (Opt.junitInstrumentationExcludesTargetPackage.get()) {
+      String pkg = extensionContext.getRequiredTestClass().getPackage().getName();
+      Opt.instrumentationExcludes.setIfDefault(Collections.singletonList(pkg + ".**"));
+    }
   }
 
   private static List<String> determineInstrumentationFilters(ExtensionContext extensionContext) {
