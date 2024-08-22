@@ -196,11 +196,6 @@ public final class Opt {
           InputEndAction.CONTINUE,
           "Possible values: continue, invalidate, restartWithMore",
           InputEndAction.class);
-  public static final OptItem<Boolean> ignoreInputEnd =
-      boolSetting(
-          "invalidate_input_end",
-          true,
-          "When `NotEnoughFuzzedDateException` is thrown, should we treat is as found bug");
   public static final OptItem<List<String>> instrumentationIncludes =
       OptParser.stringListSetting(
           "instrumentation_includes",

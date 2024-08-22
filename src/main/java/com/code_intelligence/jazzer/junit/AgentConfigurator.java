@@ -16,6 +16,7 @@ import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 
 import com.code_intelligence.jazzer.driver.Opt;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -65,7 +66,8 @@ class AgentConfigurator {
   private static void applyCommonConfiguration(ExtensionContext extensionContext) {
     Opt.registerConfigurationParameters(extensionContext::getConfigurationParameter);
     // Do not hook common IDE and JUnit classes and their dependencies.
-    List<String> hookExcludes =
+    List<String> hookExcludes = new ArrayList<>(15);
+    hookExcludes.addAll(
         asList(
             "com.google.testing.junit.**",
             "com.intellij.**",
@@ -80,7 +82,7 @@ class AgentConfigurator {
             "org.opentest4j.**",
             "org.mockito.**",
             "org.apache.maven.**",
-            "org.gradle.**");
+            "org.gradle.**"));
     if (Opt.junitCustomHooksExcludeTargetPackage.get()) {
       String pkg = extensionContext.getRequiredTestClass().getPackage().getName();
       hookExcludes.add(pkg + ".**");

@@ -289,7 +289,30 @@ public final class FuzzTargetRunner {
           return LIBFUZZER_INVALID_INPUT;
         case RESTART_WITH_MORE_INPUT:
           {
-            throw new IllegalStateException("not implemented");
+            if (dataLength == 0) return LIBFUZZER_CONTINUE;
+
+            Log.warn(
+                "Got out of fuzzed input. Restarting with more data. This feature currently can't"
+                    + " follow -max_len setting of libFuzzer. So, we assume that it's default:"
+                    + " 4096");
+            final int MAX_LEN = 4096;
+            int newDataLength = Math.min(dataLength * 2, MAX_LEN);
+            long newDataPtr = UNSAFE.reallocateMemory(dataPtr, newDataLength);
+            if (newDataPtr == 0) {
+              Log.warn(
+                  "Failed to reallocate more data. Was: "
+                      + dataLength
+                      + ". Tried to get "
+                      + newDataLength);
+              return LIBFUZZER_CONTINUE;
+            }
+            if (newDataPtr != dataPtr) {
+              Log.warn("New data is allocated at different address. Idk what will happen");
+            } else {
+              Log.info("New data is reallocated at the same address");
+            }
+            UNSAFE.copyMemory(newDataPtr, newDataPtr + dataLength, newDataLength - dataLength);
+            return runOne(newDataPtr, newDataLength);
           }
         default:
           throw new IllegalArgumentException("Unknown inputEndAction: " + inputEndAction);

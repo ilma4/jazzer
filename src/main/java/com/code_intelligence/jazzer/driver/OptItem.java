@@ -417,7 +417,7 @@ public abstract class OptItem<T> implements Supplier<T> {
 
     @Override
     protected Optional<T> fromString(String rawValue) {
-      String value = rawValue.toLowerCase().replace(' ', '_');
+      String value = rawValue.trim().toUpperCase().replace(' ', '_');
       try {
         return Optional.of(java.lang.Enum.valueOf(enumClass, value));
       } catch (IllegalArgumentException ignore) {
