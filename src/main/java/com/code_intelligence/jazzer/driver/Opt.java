@@ -12,6 +12,7 @@
 package com.code_intelligence.jazzer.driver;
 
 import static com.code_intelligence.jazzer.driver.OptParser.boolSetting;
+import static com.code_intelligence.jazzer.driver.OptParser.enumSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.stringListSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.stringSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.uint64Setting;
@@ -189,6 +190,12 @@ public final class Opt {
           false,
           "If true FuzzedDataProvider will throw `NotEnoughFuzzedDataException`"
               + "when fuzzed data is not enough");
+  public static final OptItem<InputEndAction> inputEndAction =
+      enumSetting(
+          "input_end_action",
+          InputEndAction.CONTINUE,
+          "Possible values: continue, invalidate, restartWithMore",
+          InputEndAction.class);
   public static final OptItem<Boolean> ignoreInputEnd =
       boolSetting(
           "invalidate_input_end",

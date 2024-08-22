@@ -110,6 +110,7 @@ java_jni_library(
         ":exception_utils",
         ":fuzz_target_holder",
         ":fuzzed_data_provider_impl",
+        ":input_end_action",
         ":lifecycle_methods_invoker",
         ":opt",
         ":recording_fuzzed_data_provider",
@@ -187,6 +188,7 @@ java_library(
         "//src/test/java/com/code_intelligence/jazzer/driver:__subpackages__",
     ],
     deps = [
+        ":input_end_action",
         ":opt_item",
         "//src/main/java/com/code_intelligence/jazzer:constants",
         "//src/main/java/com/code_intelligence/jazzer/utils:log",
@@ -199,6 +201,12 @@ java_library(
     visibility = [
         "//src/test/java/com/code_intelligence/jazzer/driver:__pkg__",
     ],
+)
+
+java_library(
+    name = "input_end_action",
+    srcs = ["InputEndAction.java"],
+    visibility = ["//src/test/java/com/code_intelligence/jazzer/driver:__pkg__"],
 )
 
 java_library(

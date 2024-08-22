@@ -88,7 +88,8 @@ public final class FuzzTargetRunner {
   private static final String OPENTEST4J_TEST_ABORTED_EXCEPTION =
       "org.opentest4j.TestAbortedException";
 
-  private static final String NOT_ENOUGH_FUZZED_DATA_EXCEPTION = NotEnoughFuzzedData.class.getName();
+  private static final String NOT_ENOUGH_FUZZED_DATA_EXCEPTION =
+      NotEnoughFuzzedData.class.getName();
 
   private static final Unsafe UNSAFE = UnsafeProvider.getUnsafe();
 
@@ -111,7 +112,7 @@ public final class FuzzTargetRunner {
   private static final boolean emitDedupToken = Opt.dedup.get();
   private static final long keepGoing = Opt.keepGoing.get();
   private static final boolean limitedInput = Opt.limitedInput.get();
-  private static final boolean invalidateInputEnd = Opt.ignoreInputEnd.get();
+  private static final InputEndAction inputEndAction = Opt.inputEndAction.get();
   private static final long crossOverFrequency = Opt.mutatorCrossOverFrequency.get();
   private static final FuzzedDataProviderImpl fuzzedDataProvider =
       FuzzedDataProviderImpl.withNativeData();
@@ -280,7 +281,19 @@ public final class FuzzTargetRunner {
     }
 
     if (finding.getClass().getName().equals(NOT_ENOUGH_FUZZED_DATA_EXCEPTION)) {
-      return invalidateInputEnd ? LIBFUZZER_CONTINUE : LIBFUZZER_INVALID_INPUT;
+      // replace it with closed switch, when possible
+      switch (inputEndAction) {
+        case CONTINUE:
+          return LIBFUZZER_CONTINUE;
+        case INVALIDATE:
+          return LIBFUZZER_INVALID_INPUT;
+        case RESTART_WITH_MORE_INPUT:
+          {
+            throw new IllegalStateException("not implemented");
+          }
+        default:
+          throw new IllegalArgumentException("Unknown inputEndAction: " + inputEndAction);
+      }
     }
 
     // The user-provided fuzz target method has returned. Any further exits, e.g. due to uncaught

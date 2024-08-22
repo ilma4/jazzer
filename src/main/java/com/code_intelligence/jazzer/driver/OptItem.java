@@ -407,6 +407,30 @@ public abstract class OptItem<T> implements Supplier<T> {
     }
   }
 
+  public static final class Enum<T extends java.lang.Enum<T>> extends OptItem<T> {
+    private final Class<T> enumClass;
+
+    Enum(String name, String defaultValue, String description, Class<T> enumClass) {
+      super(name, defaultValue, description);
+      this.enumClass = enumClass;
+    }
+
+    @Override
+    protected Optional<T> fromString(String rawValue) {
+      String value = rawValue.toLowerCase().replace(' ', '_');
+      try {
+        return Optional.of(java.lang.Enum.valueOf(enumClass, value));
+      } catch (IllegalArgumentException ignore) {
+        return Optional.empty();
+      }
+    }
+
+    @Override
+    protected String getType() {
+      return "Enum";
+    }
+  }
+
   private static <T> Stream<T> stream(Optional<T> optional) {
     return optional.map(Stream::of).orElseGet(Stream::empty);
   }

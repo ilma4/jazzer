@@ -86,6 +86,13 @@ final class OptParser {
     return opt;
   }
 
+  static <T extends Enum<T>> OptItem<T> enumSetting(
+      String name, T defaultValue, String description, Class<T> enumClass) {
+    OptItem<T> opt = new OptItem.Enum<>(name, defaultValue.name(), description, enumClass);
+    knownArgs.add(opt);
+    return opt;
+  }
+
   static void registerAndValidateCommandLineArgs(List<Map.Entry<String, String>> cliArgs) {
     Set<String> allowedArgs =
         knownArgs.stream()
