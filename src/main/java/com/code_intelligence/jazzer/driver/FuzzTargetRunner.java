@@ -57,6 +57,8 @@ import sun.misc.Unsafe;
  * concurrently.
  */
 public final class FuzzTargetRunner {
+
+
   static {
     if (Opt.autofuzz.get().isEmpty()) {
       if (!Opt.autofuzzIgnore.get().isEmpty()) {
@@ -113,6 +115,7 @@ public final class FuzzTargetRunner {
   private static final long keepGoing = Opt.keepGoing.get();
   private static final boolean limitedInput = Opt.limitedInput.get();
   private static final InputEndAction inputEndAction = Opt.inputEndAction.get();
+  private static final int inputEndReturnCode = Opt.inputEndReturnCode.get();
   private static final long crossOverFrequency = Opt.mutatorCrossOverFrequency.get();
   private static final FuzzedDataProviderImpl fuzzedDataProvider =
       FuzzedDataProviderImpl.withNativeData();
@@ -314,6 +317,8 @@ public final class FuzzTargetRunner {
             UNSAFE.copyMemory(newDataPtr, newDataPtr + dataLength, newDataLength - dataLength);
             return runOne(newDataPtr, newDataLength);
           }
+        case RETURN:
+            return inputEndReturnCode;
         default:
           throw new IllegalArgumentException("Unknown inputEndAction: " + inputEndAction);
       }

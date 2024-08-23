@@ -86,6 +86,12 @@ final class OptParser {
     return opt;
   }
 
+  static OptItem<Integer> int32Setting(String name, int defaultValue, String description) {
+    OptItem<Integer> opt = new OptItem.Int32(name, Integer.toString(defaultValue), description);
+    knownArgs.add(opt);
+    return opt;
+  }
+
   static <T extends Enum<T>> OptItem<T> enumSetting(
       String name, T defaultValue, String description, Class<T> enumClass) {
     OptItem<T> opt = new OptItem.Enum<>(name, defaultValue.name(), description, enumClass);

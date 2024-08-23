@@ -13,6 +13,7 @@ package com.code_intelligence.jazzer.driver;
 
 import static com.code_intelligence.jazzer.driver.OptParser.boolSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.enumSetting;
+import static com.code_intelligence.jazzer.driver.OptParser.int32Setting;
 import static com.code_intelligence.jazzer.driver.OptParser.stringListSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.stringSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.uint64Setting;
@@ -196,6 +197,12 @@ public final class Opt {
           InputEndAction.CONTINUE,
           "Possible values: continue, invalidate, restartWithMore",
           InputEndAction.class);
+  public static final OptItem<Integer> inputEndReturnCode =
+      int32Setting(
+          "input_end_return_code",
+          0,
+          "If input_end_action=return, it returns this code"
+      );
   public static final OptItem<List<String>> instrumentationIncludes =
       OptParser.stringListSetting(
           "instrumentation_includes",

@@ -19,5 +19,6 @@ package com.code_intelligence.jazzer.driver;
 public enum InputEndAction {
   CONTINUE,
   INVALIDATE,
+  RETURN,
   RESTART_WITH_MORE_INPUT
 }

@@ -431,6 +431,26 @@ public abstract class OptItem<T> implements Supplier<T> {
     }
   }
 
+  public static final class Int32 extends OptItem<Integer> {
+    Int32(String name, String defaultValue, String description) {
+      super(name, defaultValue, description);
+    }
+
+    @Override
+    protected Optional<Integer> fromString(String rawValue) {
+      try {
+        return Optional.of(Integer.parseInt(rawValue));
+      } catch (NumberFormatException e) {
+        return Optional.empty();
+      }
+    }
+
+    @Override
+    protected String getType() {
+      return "int32";
+    }
+  }
+
   private static <T> Stream<T> stream(Optional<T> optional) {
     return optional.map(Stream::of).orElseGet(Stream::empty);
   }
