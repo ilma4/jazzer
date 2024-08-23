@@ -58,7 +58,6 @@ import sun.misc.Unsafe;
  */
 public final class FuzzTargetRunner {
 
-
   static {
     if (Opt.autofuzz.get().isEmpty()) {
       if (!Opt.autofuzzIgnore.get().isEmpty()) {
@@ -318,7 +317,7 @@ public final class FuzzTargetRunner {
             return runOne(newDataPtr, newDataLength);
           }
         case RETURN:
-            return inputEndReturnCode;
+          return inputEndReturnCode;
         default:
           throw new IllegalArgumentException("Unknown inputEndAction: " + inputEndAction);
       }

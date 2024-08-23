@@ -198,11 +198,7 @@ public final class Opt {
           "Possible values: continue, invalidate, restartWithMore",
           InputEndAction.class);
   public static final OptItem<Integer> inputEndReturnCode =
-      int32Setting(
-          "input_end_return_code",
-          0,
-          "If input_end_action=return, it returns this code"
-      );
+      int32Setting("input_end_return_code", 0, "If input_end_action=return, it returns this code");
   public static final OptItem<List<String>> instrumentationIncludes =
       OptParser.stringListSetting(
           "instrumentation_includes",
