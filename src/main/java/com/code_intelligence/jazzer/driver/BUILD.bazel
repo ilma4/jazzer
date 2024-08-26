@@ -86,13 +86,16 @@ java_library(
     ],
 )
 
+java_library(
+    name = "limited_fuzzed_data_provider",
+    srcs = ["LimitedFuzzedDataProvider.java"],
+    deps = ["//src/main/java/com/code_intelligence/jazzer/api"],
+    visibility = ["//src/test/java/com/code_intelligence/jazzer/driver:__pkg__"],
+)
+
 java_jni_library(
     name = "fuzz_target_runner",
-    # TODO: LimitedFuzzedDataProvider should be separate java_library, like RecordingFuzzedDataProvider
-    srcs = [
-        "FuzzTargetRunner.java",
-        "LimitedFuzzedDataProvider.java",
-    ],
+    srcs = ["FuzzTargetRunner.java"],
     # This library is loaded by the classes in the agent runtime package as it needs to be available
     # in the bootstrap class loader. It is packaged here rather than in jazzer_boostrap.jar since
     # the bootstrap class loader doesn't support resources.
@@ -110,6 +113,7 @@ java_jni_library(
         ":exception_utils",
         ":fuzz_target_holder",
         ":fuzzed_data_provider_impl",
+        ":limited_fuzzed_data_provider",
         ":input_end_action",
         ":lifecycle_methods_invoker",
         ":opt",
