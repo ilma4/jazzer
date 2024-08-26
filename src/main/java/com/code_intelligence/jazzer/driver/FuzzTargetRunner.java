@@ -100,6 +100,7 @@ public final class FuzzTargetRunner {
   private static final int LIBFUZZER_CONTINUE = 0;
   private static final int LIBFUZZER_RETURN_FROM_DRIVER = -2;
   private static final int LIBFUZZER_INVALID_INPUT = -1;
+  private static final int LIBFUZZER_REQUEST_MORE_INPUT = -3;
 
   // Keep these options used in runOne (and thus the critical path) in static final fields so that
   // they can be constant-folded by the JIT.
@@ -292,29 +293,7 @@ public final class FuzzTargetRunner {
         case RESTART_WITH_MORE_INPUT:
           {
             if (dataLength == 0) return LIBFUZZER_CONTINUE;
-
-            Log.warn(
-                "Got out of fuzzed input. Restarting with more data. This feature currently can't"
-                    + " follow -max_len setting of libFuzzer. So, we assume that it's default:"
-                    + " 4096");
-            final int MAX_LEN = 4096;
-            int newDataLength = Math.min(dataLength * 2, MAX_LEN);
-            long newDataPtr = UNSAFE.reallocateMemory(dataPtr, newDataLength);
-            if (newDataPtr == 0) {
-              Log.warn(
-                  "Failed to reallocate more data. Was: "
-                      + dataLength
-                      + ". Tried to get "
-                      + newDataLength);
-              return LIBFUZZER_CONTINUE;
-            }
-            if (newDataPtr != dataPtr) {
-              Log.warn("New data is allocated at different address. Idk what will happen");
-            } else {
-              Log.info("New data is reallocated at the same address");
-            }
-            UNSAFE.copyMemory(newDataPtr, newDataPtr + dataLength, newDataLength - dataLength);
-            return runOne(newDataPtr, newDataLength);
+            return LIBFUZZER_REQUEST_MORE_INPUT;
           }
         case RETURN:
           return inputEndReturnCode;

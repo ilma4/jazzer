@@ -18,6 +18,7 @@ import static com.code_intelligence.jazzer.driver.OptParser.stringListSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.stringSetting;
 import static com.code_intelligence.jazzer.driver.OptParser.uint64Setting;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -195,7 +196,7 @@ public final class Opt {
       enumSetting(
           "input_end_action",
           InputEndAction.CONTINUE,
-          "Possible values: continue, invalidate, restartWithMore",
+          "Possible values: " + Arrays.toString(InputEndAction.values()),
           InputEndAction.class);
   public static final OptItem<Integer> inputEndReturnCode =
       int32Setting("input_end_return_code", 0, "If input_end_action=return, it returns this code");

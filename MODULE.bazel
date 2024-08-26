@@ -223,7 +223,8 @@ http_archive(
 
 git_repository(
     name = "jazzer_libfuzzer",
-    branch = "main",
+    commit = "e74f733",
+#    branch = "main",
     build_file = "//third_party:libFuzzer.BUILD",
     remote = "https://github.com/ilma4/llvm-project-jazzer.git",
     strip_prefix = "compiler-rt/lib/fuzzer",

@@ -92,6 +92,7 @@ final class OptParser {
     return opt;
   }
 
+  // this could be an inline function with `reified T` and no`enumClass` parameter
   static <T extends Enum<T>> OptItem<T> enumSetting(
       String name, T defaultValue, String description, Class<T> enumClass) {
     OptItem<T> opt = new OptItem.Enum<>(name, defaultValue.name(), description, enumClass);
